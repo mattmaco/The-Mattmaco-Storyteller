@@ -83,6 +83,7 @@ def test_banner_heading1(mini_blocks):
 def test_subheading_heading3(mini_blocks):
     h3 = [_text(b) for b in mini_blocks if b.role == "heading3"]
     assert "The principle" in h3 and "Worked example" in h3
+    assert "Quick check" in h3  # a page-0 table that is not the chunk map keeps its heading
 
 
 def test_box_kinds(mini_blocks):
@@ -155,3 +156,25 @@ def test_plain_pdf_not_studypack():
         page.insert_text((72, 100), "An ordinary report paragraph.", fontsize=11)
         page.insert_text((72, 770), f"Page {n + 1} of 4", fontsize=8)
     assert not is_studypack(doc)
+
+
+def test_injected_table_rects(mini_pdf, mini_blocks):
+    with pymupdf.open(mini_pdf) as doc:
+        rects = {n: [tuple(t.bbox) for t in p.find_tables().tables] for n, p in enumerate(doc)}
+        injected = studypack_blocks(doc, table_rects_by_page=rects)
+        no_tables = studypack_blocks(doc, table_rects_by_page={})
+    assert [b.to_dict() for b in injected] == [b.to_dict() for b in mini_blocks]
+    assert any("Q1: Is p stable?" in _text(b) for b in no_tables)
+
+
+def test_real_pack_no_exam_pill(real_blocks):
+    # The pill is gone; the only mention left is the legend prose that quotes it (“Past exam question”).
+    pill = re.compile(r"(?<!“)Past exam question")
+    assert not any(pill.search(_text(b)) for b in real_blocks)
+    heads = {b.lead: b for b in real_blocks if b.role == "heading2"}
+    assert not any(heads[f"Chunk {n}."].flagged for n in (30, 31, 32, 33))
+
+
+def test_real_pack_chunk_map_heading_dropped(real_blocks):
+    page0 = [b for b in real_blocks if b.page == 0]
+    assert page0 and not any(_text(b) == "Chunk map" for b in page0)

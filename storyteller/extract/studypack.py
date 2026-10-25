@@ -42,6 +42,8 @@ FOOTER_PAGE_RE = re.compile(r"^Page \d+ of \d+$")
 SOURCE_LINE_RE = re.compile(r"\bdeck,? slides?\b")
 INLINE_CITE_RE = re.compile(r"\s*\((?:P\d|Lk|SS) \d[^()]*\)")  # a cite printed in a label's own colour
 FLAG_RE = re.compile(r"^(★\s*)?(Likely tested)?$")
+EXAM_PILL = "Past exam question"  # chunk-header pill in the flag colour: dropped, but not "Likely tested"
+FLAG_PILL_MAX_SIZE = 8.5  # pills are small; a key-box label in the flag colour is 9pt
 BADGES = {"Stated", "Follows"}
 PUNCT_START = tuple(".,;:?!)")
 
@@ -213,7 +215,7 @@ def classify_span(span: RawSpan, ctx: PageContext) -> str:
         return "table"
     if span.color in CITE_COLOURS:
         return "cite"
-    if span.color == FLAG and FLAG_RE.match(text):
+    if span.color == FLAG and (FLAG_RE.match(text) or (text == EXAM_PILL and span.size < FLAG_PILL_MAX_SIZE)):
         return "flag"
     if text in BADGES and span.bold and span.size < 8.5:
         return "badge"
@@ -301,10 +303,9 @@ class _Pending:
     chunk_number: str | None = None
 
 
-def _page_groups(page: pymupdf.Page, pno: int, pending: _Pending):
+def _page_groups(page: pymupdf.Page, pno: int, pending: _Pending, table_rects: list[BBox]):
     """Text groups of one page in native order, plus its context, flag and chunk-number spans."""
     pairs = read_spans_with_chars(page, pno)
-    table_rects = [tuple(t.bbox) for t in page.find_tables().tables]
     ctx = page_context(page, [s for s, _ in pairs], table_rects, carry_kind=pending.box_kind)
     pending.box_kind = open_box_kind(ctx)
 
@@ -335,7 +336,8 @@ def _page_groups(page: pymupdf.Page, pno: int, pending: _Pending):
             elif role == "chunk_number":
                 numbers.append((s.text.strip(), s.bbox))
             elif role == "flag":
-                flags.append(s.bbox)
+                if FLAG_RE.match(s.text.strip()):  # only "★ Likely tested" sets flagged
+                    flags.append(s.bbox)
             elif role in TEXT_ROLES:
                 pending.lead_open = False
                 line_role = line_role or role
@@ -348,6 +350,8 @@ def _page_groups(page: pymupdf.Page, pno: int, pending: _Pending):
         words = _line_words(parts)
         if not words:
             continue
+        if line_role != "body":
+            pending.lead = []  # a heading or box label came first: the lead belonged to nothing here
         cur = groups[-1] if groups else None
         # A tag or badge starts a new body block, even mid-PyMuPDF-block ("4. Follows ...").
         lead_here = line_role == "body" and bool(pending.lead)
@@ -380,7 +384,7 @@ def _restore_y_order(blocks: list[Block], bboxes: dict[int, BBox]) -> list[Block
                 cursor += 1
                 continue
             cursor = None
-        displaced = b.role == "heading2" or _overlaps_x(bboxes[id(b)], bboxes[id(out[-1])]) if out else False
+        displaced = (b.role == "heading2" or _overlaps_x(bboxes[id(b)], bboxes[id(out[-1])])) if out else False
         if out and top(b) < top(out[-1]) - JUMP_BACK and displaced:
             cursor = next((i for i, o in enumerate(out) if top(o) > top(b)), len(out))
             out.insert(cursor, b)
@@ -414,11 +418,46 @@ def _overlaps_y(a: BBox, b: BBox) -> bool:
     return min(a[3], b[3]) - max(a[1], b[1]) > 0
 
 
-def studypack_blocks(doc: pymupdf.Document) -> list[Block]:
+def table_rects_of(page: pymupdf.Page) -> list[BBox]:
+    return [tuple(t.bbox) for t in page.find_tables().tables]
+
+
+def _chunk_map_rect(doc: pymupdf.Document, table_rects: list[BBox]) -> BBox | None:
+    """The page-0 table that lists the chunks (≥ 3 level-2 outline titles inside it)."""
+    titles = [re.sub(r"^\d+\s+", "", t[1]).strip()[:24] for t in doc.get_toc() if t[0] == 2]
+    for rect in table_rects:
+        text = " ".join(doc[0].get_text("text", clip=pymupdf.Rect(rect)).split())
+        if sum(1 for t in titles if t and t in text) >= 3:
+            return rect
+    return None
+
+
+def _drop_chunk_map_heading(blocks: list[Block], bboxes: dict[int, BBox], rect: BBox) -> list[Block]:
+    """Drop the heading whose next content is the chunk-map table (the outline replaces both)."""
+    above = [b for b in blocks if bboxes[id(b)][3] <= rect[1] + 2]
+    if not above:
+        return blocks
+    last = max(above, key=lambda b: bboxes[id(b)][3])
+    if last.role.startswith("heading") and rect[1] - bboxes[id(last)][3] < 30:
+        return [b for b in blocks if b is not last]
+    return blocks
+
+
+def studypack_blocks(
+    doc: pymupdf.Document, table_rects_by_page: dict[int, list[BBox]] | None = None
+) -> list[Block]:
+    """Blocks of a study pack in reading order; table spans are left for Task 4's table blocks.
+
+    `table_rects_by_page` lets a caller that already ran `find_tables()` pass its rects in.
+    """
     blocks: list[Block] = []
     pending = _Pending()
     for pno, page in enumerate(doc):
-        groups, ctx, flags, numbers = _page_groups(page, pno, pending)
+        if table_rects_by_page is not None:
+            table_rects = list(table_rects_by_page.get(pno, []))
+        else:
+            table_rects = table_rects_of(page)
+        groups, ctx, flags, numbers = _page_groups(page, pno, pending, table_rects)
         page_blocks: list[Block] = []
         for g in groups:
             words = _collapse_punct(join_lines(g.lines))
@@ -449,6 +488,10 @@ def studypack_blocks(doc: pymupdf.Document) -> list[Block]:
             h.flagged = any(_near_y(bboxes[id(h)], fb) for fb in flags)
 
         page_blocks = _restore_y_order(page_blocks, bboxes)
+        if pno == 0:
+            chunk_map = _chunk_map_rect(doc, table_rects)
+            if chunk_map is not None:
+                page_blocks = _drop_chunk_map_heading(page_blocks, bboxes, chunk_map)
 
         for n, b in enumerate(page_blocks):
             b.id = f"b{pno:03d}_{n:03d}"
