@@ -117,8 +117,9 @@ def test_reading_order_and_ids(mini_blocks):
     assert len({b.id for b in mini_blocks}) == len(mini_blocks)
 
 
-def test_tables_skipped(mini_blocks):
-    assert not any("Q1: Is p stable?" in _text(b) for b in mini_blocks)
+def test_table_text_only_in_table_blocks(mini_blocks):
+    hits = [b for b in mini_blocks if "Q1: Is p stable?" in _text(b)]
+    assert [b.role for b in hits] == ["table"]
 
 
 def test_real_pack_detected(real_pack):
@@ -163,7 +164,8 @@ def test_injected_table_rects(mini_pdf, mini_blocks):
         rects = {n: [tuple(t.bbox) for t in p.find_tables().tables] for n, p in enumerate(doc)}
         injected = studypack_blocks(doc, table_rects_by_page=rects)
         no_tables = studypack_blocks(doc, table_rects_by_page={})
-    assert [b.to_dict() for b in injected] == [b.to_dict() for b in mini_blocks]
+    assert [b.role for b in injected if b.role == "table"] == []  # rects alone make no table blocks
+    assert [b.to_dict() for b in injected] == [b.to_dict() for b in mini_blocks if b.role != "table"]
     assert any("Q1: Is p stable?" in _text(b) for b in no_tables)
 
 

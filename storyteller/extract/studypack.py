@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import pymupdf
 
 from storyteller.extract.pdfwords import RawSpan, join_lines, read_spans, read_spans_with_chars, span_words
-from storyteller.model import BBox, Block, Word
+from storyteller.model import BBox, Block, Table, Word
 
 BODY = 0x1F2933
 CITE_COLOURS = {0x5C6774, 0x55606C}
@@ -443,20 +443,44 @@ def _drop_chunk_map_heading(blocks: list[Block], bboxes: dict[int, BBox], rect: 
     return blocks
 
 
-def studypack_blocks(
-    doc: pymupdf.Document, table_rects_by_page: dict[int, list[BBox]] | None = None
-) -> list[Block]:
-    """Blocks of a study pack in reading order; table spans are left for Task 4's table blocks.
+def _table_block(rect: BBox, table: Table, pno: int) -> Block:
+    cells = [c for c in table.header] + [c for row in table.rows for c in row]
+    return Block("", "table", [w for c in cells for w in c], pno, table=table)
 
-    `table_rects_by_page` lets a caller that already ran `find_tables()` pass its rects in.
+
+def _insert_by_y(page_blocks: list[Block], bboxes: dict[int, BBox], block: Block, rect: BBox) -> None:
+    """Place a table block before the first block that starts below the table's top."""
+    bboxes[id(block)] = rect
+    at = next((i for i, b in enumerate(page_blocks) if bboxes[id(b)][1] >= rect[1]), len(page_blocks))
+    page_blocks.insert(at, block)
+
+
+def studypack_blocks(
+    doc: pymupdf.Document,
+    table_rects_by_page: dict[int, list[BBox]] | None = None,
+    tables_by_page: dict[int, list[tuple[BBox, Table]]] | None = None,
+) -> list[Block]:
+    """Blocks of a study pack in reading order, tables included as `table` blocks.
+
+    `find_tables()` runs once per page. A caller that already ran it passes
+    `tables_by_page` (rects and Tables, which also yields table blocks) or just
+    `table_rects_by_page` (table text is skipped and no table blocks are made).
+    With neither, tables are found here.
     """
+    from storyteller.extract.tables import find_tables
+
     blocks: list[Block] = []
     pending = _Pending()
     for pno, page in enumerate(doc):
-        if table_rects_by_page is not None:
+        tables: list[tuple[BBox, Table]] = []
+        if tables_by_page is not None:
+            tables = tables_by_page.get(pno, [])
+            table_rects = [r for r, _ in tables]
+        elif table_rects_by_page is not None:
             table_rects = list(table_rects_by_page.get(pno, []))
         else:
-            table_rects = table_rects_of(page)
+            tables = find_tables(page, pno)
+            table_rects = [r for r, _ in tables]
         groups, ctx, flags, numbers = _page_groups(page, pno, pending, table_rects)
         page_blocks: list[Block] = []
         for g in groups:
@@ -492,6 +516,11 @@ def studypack_blocks(
             chunk_map = _chunk_map_rect(doc, table_rects)
             if chunk_map is not None:
                 page_blocks = _drop_chunk_map_heading(page_blocks, bboxes, chunk_map)
+                tables = [(r, t) for r, t in tables if r != chunk_map]  # the outline replaces it
+        for rect, table in tables:
+            block = _table_block(rect, table, pno)
+            if block.words:
+                _insert_by_y(page_blocks, bboxes, block, rect)
 
         for n, b in enumerate(page_blocks):
             b.id = f"b{pno:03d}_{n:03d}"
