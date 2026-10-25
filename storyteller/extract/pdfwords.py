@@ -34,10 +34,21 @@ def _union(boxes) -> BBox:
     )
 
 
+def _solid_boxes(chars: list) -> list:
+    """Boxes of chars with real area (a ligature tail has none); all boxes if none do."""
+    return [c["bbox"] for c in chars if _area(c["bbox"]) > 0] or [c["bbox"] for c in chars]
+
+
 def _keep_char(ch: dict) -> bool:
     c = ch["c"]
-    # Whitespace only separates words; combining marks may have no advance of their own.
-    return c.isspace() or unicodedata.combining(c) > 0 or _area(ch["bbox"]) > 0
+    # Whitespace only separates words; combining marks and ligature tails (the "i" of a
+    # "ti" ligature) have zero width, so keep any letter or digit even without area.
+    return (
+        c.isspace()
+        or unicodedata.combining(c) > 0
+        or unicodedata.category(c)[:1] in ("L", "N")
+        or _area(ch["bbox"]) > 0
+    )
 
 
 def read_spans_with_chars(page: pymupdf.Page, page_no: int) -> list[tuple[RawSpan, list]]:
@@ -57,7 +68,7 @@ def read_spans_with_chars(page: pymupdf.Page, page_no: int) -> list[tuple[RawSpa
                 raw = RawSpan(
                     text=text,
                     page=page_no,
-                    bbox=_union([ch["bbox"] for ch in chars]),
+                    bbox=_union(_solid_boxes([ch for ch in chars if not ch["c"].isspace()])),
                     size=float(span["size"]),
                     color=int(span["color"]),
                     bold="Bold" in font or bool(span["flags"] & 16),
@@ -79,8 +90,7 @@ def span_words(span: RawSpan, chars: list) -> list[Word]:
 
     def flush() -> None:
         if cur:
-            solid = [ch["bbox"] for ch in cur if _area(ch["bbox"]) > 0] or [cur[0]["bbox"]]
-            words.append(Word("".join(ch["c"] for ch in cur), span.page, _union(solid)))
+            words.append(Word("".join(ch["c"] for ch in cur), span.page, _union(_solid_boxes(cur))))
             cur.clear()
 
     for ch in chars:

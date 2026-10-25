@@ -70,3 +70,81 @@ def test_dehyphenated_keeps_first_bbox():
     first = Word("evolu-", 0, (1.0, 2.0, 3.0, 4.0))
     out = join_lines([[first], [_w("tion")]])
     assert out[0].bbox == first.bbox
+
+
+def test_zero_width_ligature_letter_stays_in_word():
+    from storyteller.extract.pdfwords import RawSpan
+
+    span = RawSpan("ti", 0, (0, 0, 10, 10), 9.0, 0, False, 0, 0)
+    chars = [
+        {"c": "t", "bbox": (0, 0, 10, 10)},
+        {"c": "i", "bbox": (10, 0, 10, 10)},  # zero width, full height
+        {"c": "n", "bbox": (10, 0, 16, 10)},
+    ]
+    words = span_words(span, chars)
+    assert _texts(words) == ["tin"]
+    assert words[0].bbox == (0, 0, 16, 10)
+
+
+def test_real_pack_keeps_ligature_letters(real_pack):
+    import re
+
+    bad = re.compile(r"\b(Evoluton|populaton|selecton)\b")
+    with pymupdf.open(real_pack) as doc:
+        texts = [
+            w.text
+            for i in range(6)
+            for s, c in read_spans_with_chars(doc[i], i)
+            for w in span_words(s, c)
+        ]
+    assert not [t for t in texts if bad.search(t)]
+    assert "Evolution" in [t.strip(":,.;()") for t in texts]
+
+
+class _FakePage:
+    def __init__(self, spans):
+        self._spans = spans
+
+    def get_text(self, mode, sort=False):
+        line = {"spans": self._spans}
+        return {"blocks": [{"type": 0, "lines": [line]}]}
+
+
+def _fake_span(chars, font="Helvetica", flags=0):
+    return {"chars": chars, "font": font, "flags": flags, "size": 9.0, "color": 0x1F2933}
+
+
+def test_zero_area_non_alnum_dropped():
+    chars = [
+        {"c": "a", "bbox": (0, 0, 5, 10)},
+        {"c": "#", "bbox": (5, 0, 5, 10)},
+        {"c": "b", "bbox": (5, 0, 10, 10)},
+    ]
+    (span,) = read_spans(_FakePage([_fake_span(chars)]), 3)
+    assert span.text == "ab"
+    assert span.page == 3
+
+
+def test_span_bbox_ignores_whitespace_chars():
+    chars = [
+        {"c": " ", "bbox": (0, 0, 4, 10)},
+        {"c": "a", "bbox": (4, 0, 9, 10)},
+        {"c": " ", "bbox": (9, 0, 14, 10)},
+    ]
+    (span,) = read_spans(_FakePage([_fake_span(chars)]), 0)
+    assert span.bbox == (4, 0, 9, 10)
+
+
+def test_bold_rule():
+    c = [{"c": "a", "bbox": (0, 0, 5, 10)}]
+    spans = read_spans(
+        _FakePage(
+            [
+                _fake_span(c, font="Foo-Bold"),
+                _fake_span(c, font="Foo", flags=16),
+                _fake_span(c, font="Foo", flags=0),
+            ]
+        ),
+        0,
+    )
+    assert [s.bold for s in spans] == [True, True, False]
