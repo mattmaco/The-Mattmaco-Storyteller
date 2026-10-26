@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import pymupdf
 
-from storyteller.extract.studypack import CITE_COLOURS, _strip_inline_cites
+from storyteller.extract.common import CITE_COLOURS, collapse_punct, strip_inline_cites
 from storyteller.extract.pdfwords import RawSpan, join_lines, read_spans_with_chars, span_words
 from storyteller.model import BBox, OutlineEntry, Table, Word
 
+WRAP_GAP = 0.25  # a line starting closer than this fraction of its height under the previous one wraps it
 LINE_TOLERANCE = 0.5  # fraction of a span's height within which two segments share a line
 
 
@@ -28,7 +29,7 @@ def _cell_words(pairs: list[tuple[RawSpan, list]], cell: BBox) -> list[Word]:
         if span.color in CITE_COLOURS or not _overlaps(span.bbox, cell):
             continue
         inside = [ch for ch in chars if _in_cell(ch["bbox"], cell)]
-        for seg, cut_before in _strip_inline_cites(inside):  # a cite printed in body colour
+        for seg, cut_before in strip_inline_cites(inside):  # a cite printed in body colour
             if cut_before:
                 seg = [{"c": " ", "bbox": seg[0]["bbox"]}, *seg]
             segments.append((span, seg))
@@ -56,11 +57,42 @@ def _cell_words(pairs: list[tuple[RawSpan, list]], cell: BBox) -> list[Word]:
             chars.extend(span_chars)
             prev = span
         line_words.append(span_words(line[0][0], chars))
-    return join_lines(line_words)
+    return collapse_punct(join_lines(line_words))
 
 
 def _overlaps(a: BBox, b: BBox) -> bool:
     return min(a[2], b[2]) > max(a[0], b[0]) and min(a[3], b[3]) > max(a[1], b[1])
+
+
+def _extent(row: list[list[Word]]) -> tuple[float, float] | None:
+    ys = [w.bbox for cell in row for w in cell]
+    return (min(b[1] for b in ys), max(b[3] for b in ys)) if ys else None
+
+
+def _merge_wrapped(grid: list[list[list[Word]]]) -> list[list[list[Word]]]:
+    """Fold rows that are only the wrapped tail of the row above into it, cell by cell.
+
+    `find_tables()` cuts rows at text lines, so a two-line cell yields two rows.
+    Real rows are separated by cell padding; a wrap sits right under the line
+    above it. Rows with no text are dropped. Row 0 (the header) is kept as is.
+    """
+    out: list[list[list[Word]]] = []
+    bottom = 0.0
+    for i, row in enumerate(grid):
+        ext = _extent(row)
+        if i == 0:
+            out.append(row)
+            continue
+        if ext is None:
+            continue
+        height = ext[1] - ext[0]
+        if len(out) > 1 and ext[0] - bottom < WRAP_GAP * height:
+            out[-1] = [collapse_punct(join_lines([a, b])) for a, b in zip(out[-1], row)]
+            bottom = max(bottom, ext[1])
+        else:
+            out.append(row)
+            bottom = ext[1]
+    return out
 
 
 def find_tables(
@@ -82,6 +114,7 @@ def find_tables(
             grid.append([_cell_words(pairs, tuple(c)) if c is not None else [] for c in row.cells])
         if not grid:
             continue
+        grid = _merge_wrapped(grid)
         out.append((tuple(t.bbox), Table(header=grid[0], rows=grid[1:])))
     return out
 

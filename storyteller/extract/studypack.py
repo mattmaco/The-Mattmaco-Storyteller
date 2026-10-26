@@ -13,11 +13,12 @@ from dataclasses import dataclass, field
 
 import pymupdf
 
+from storyteller.extract.common import CITE_COLOURS, PUNCT_START, collapse_punct, strip_inline_cites
 from storyteller.extract.pdfwords import RawSpan, join_lines, read_spans, read_spans_with_chars, span_words
+from storyteller.extract.tables import find_tables
 from storyteller.model import BBox, Block, Table, Word
 
 BODY = 0x1F2933
-CITE_COLOURS = {0x5C6774, 0x55606C}
 TEAL = 0x0F6B6B
 BANNER_FILL = 0x0E6A6A
 FLAG = 0x9B1C1C
@@ -40,12 +41,10 @@ NOTE_PREFIXES = (
 
 FOOTER_PAGE_RE = re.compile(r"^Page \d+ of \d+$")
 SOURCE_LINE_RE = re.compile(r"\bdeck,? slides?\b")
-INLINE_CITE_RE = re.compile(r"\s*\((?:P\d|Lk|SS) \d[^()]*\)")  # a cite printed in a label's own colour
 FLAG_RE = re.compile(r"^(★\s*)?(Likely tested)?$")
 EXAM_PILL = "Past exam question"  # chunk-header pill in the flag colour: dropped, but not "Likely tested"
 FLAG_PILL_MAX_SIZE = 8.5  # pills are small; a key-box label in the flag colour is 9pt
 BADGES = {"Stated", "Follows"}
-PUNCT_START = tuple(".,;:?!)")
 
 CONTINUED_BOX_TOP = 60  # an unlabelled box starting above this y continues the previous page's box
 BOX_RUNS_OFF_MARGIN = 60  # a box ending this close to the page bottom may continue overleaf
@@ -259,32 +258,6 @@ def _line_words(parts: list[tuple[RawSpan, list, bool]]) -> list[Word]:
     return span_words(parts[0][0], chars) if parts else []
 
 
-def _strip_inline_cites(chars: list) -> list[tuple[list, bool]]:
-    """Split a span's chars around cite-shaped text; True marks a segment that follows a cut."""
-    text = "".join(ch["c"] for ch in chars)
-    segments: list[tuple[list, bool]] = []
-    pos, cut = 0, False
-    for m in INLINE_CITE_RE.finditer(text):
-        if m.start() > pos:
-            segments.append((chars[pos : m.start()], cut))
-        pos, cut = m.end(), True
-    if pos < len(chars):
-        segments.append((chars[pos:], cut))
-    return [(seg, c) for seg, c in segments if "".join(ch["c"] for ch in seg).strip()]
-
-
-def _collapse_punct(words: list[Word]) -> list[Word]:
-    out: list[Word] = []
-    for w in words:
-        if out and w.text.startswith(PUNCT_START):
-            prev = out[-1]
-            text = w.text[1:] if w.text.startswith(".") and prev.text.endswith(".") else w.text  # no ".."
-            out[-1] = Word(prev.text + text, prev.page, _union([prev.bbox, w.bbox]))
-        else:
-            out.append(w)
-    return out
-
-
 @dataclass
 class _Group:
     role: str
@@ -341,7 +314,7 @@ def _page_groups(page: pymupdf.Page, pno: int, pending: _Pending, table_rects: l
             elif role in TEXT_ROLES:
                 pending.lead_open = False
                 line_role = line_role or role
-                for seg, cut_before in _strip_inline_cites(chars):
+                for seg, cut_before in strip_inline_cites(chars):
                     parts.append((s, seg, gap or cut_before))
                     gap = False
                 gap = False
@@ -443,7 +416,7 @@ def _drop_chunk_map_heading(blocks: list[Block], bboxes: dict[int, BBox], rect: 
     return blocks
 
 
-def _table_block(rect: BBox, table: Table, pno: int) -> Block:
+def _table_block(table: Table, pno: int) -> Block:
     cells = [c for c in table.header] + [c for row in table.rows for c in row]
     return Block("", "table", [w for c in cells for w in c], pno, table=table)
 
@@ -467,8 +440,6 @@ def studypack_blocks(
     `table_rects_by_page` (table text is skipped and no table blocks are made).
     With neither, tables are found here.
     """
-    from storyteller.extract.tables import find_tables
-
     blocks: list[Block] = []
     pending = _Pending()
     for pno, page in enumerate(doc):
@@ -484,11 +455,11 @@ def studypack_blocks(
         groups, ctx, flags, numbers = _page_groups(page, pno, pending, table_rects)
         page_blocks: list[Block] = []
         for g in groups:
-            words = _collapse_punct(join_lines(g.lines))
+            words = collapse_punct(join_lines(g.lines))
             prev = page_blocks[-1] if page_blocks else None
             if words and prev is not None and prev.role == g.role == "body" and words[0].text.startswith(PUNCT_START):
                 # Punctuation stranded after a cite that opened a new PyMuPDF block ends the previous sentence.
-                prev.words = _collapse_punct(prev.words + words[:1])
+                prev.words = collapse_punct(prev.words + words[:1])
                 words = words[1:]
             if words and _continues(prev, g, words):
                 prev.words = prev.words + words  # a wrapped line PyMuPDF put in a block of its own
@@ -518,7 +489,7 @@ def studypack_blocks(
                 page_blocks = _drop_chunk_map_heading(page_blocks, bboxes, chunk_map)
                 tables = [(r, t) for r, t in tables if r != chunk_map]  # the outline replaces it
         for rect, table in tables:
-            block = _table_block(rect, table, pno)
+            block = _table_block(table, pno)
             if block.words:
                 _insert_by_y(page_blocks, bboxes, block, rect)
 

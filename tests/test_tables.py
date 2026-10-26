@@ -90,3 +90,29 @@ def test_real_outline_has_35_chunks(real_doc):
     outline = build_outline(real_doc)
     chunks = [o for o in outline if o.level == 2 and o.title[:1].isdigit()]
     assert len(chunks) == 35
+
+
+def test_real_pack_wrapped_rows_merged(real_doc):
+    found = find_tables(real_doc[4], 4)
+    assert [len(t.rows) for _, t in found] == [3, 3]
+    for _, table in found:
+        for row in table.rows:
+            assert row[0], "continuation row left unmerged"
+    first = found[0][1]
+    assert _cell(first.rows[1][0]) == "Q2: offspring genotypes"
+    assert _cell(first.rows[0][2]).endswith("or the other.")
+
+
+def test_real_pack_cells_have_no_space_before_punctuation(real_doc):
+    for pno in range(len(real_doc)):
+        for _, table in find_tables(real_doc[pno], pno):
+            for row in [table.header] + table.rows:
+                for cell in row:
+                    assert not re.search(r" [.,;:?!)]", _cell(cell)), (pno, _cell(cell))
+                assert any(row), (pno, "all-empty row")
+
+
+def test_real_pack_no_body_row_has_empty_first_cell(real_doc):
+    for pno in range(len(real_doc)):
+        for _, table in find_tables(real_doc[pno], pno):
+            assert all(row[0] for row in table.rows), pno
