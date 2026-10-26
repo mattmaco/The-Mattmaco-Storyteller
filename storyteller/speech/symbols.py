@@ -9,8 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 TRAILING_PUNCT = ".,;:?!"
-_OPENERS = "\"'([{“‘"
-_CLOSERS = "\"')]}”’"
+_QUOTE_OPEN = "\"'“‘"
+_QUOTE_CLOSE = "\"'”’"
+_OPEN = "([{"
+_CLOSE = ")]}"
 _PQ = re.compile(r"^(\d+)([pq]{2,3})$")
 _EN_DASH = "–"
 _EM_DASH = "—"
@@ -74,21 +76,71 @@ def _speak_chars(core: str, rules: Rules) -> str:
     return "".join(out)
 
 
+def _bracket_matches(core: str) -> dict[int, int]:
+    """Map each matched bracket's index to its partner's index."""
+    stack: list[int] = []
+    pairs: dict[int, int] = {}
+    for i, ch in enumerate(core):
+        if ch in _OPEN:
+            stack.append(i)
+        elif ch in _CLOSE and stack and _OPEN.index(core[stack[-1]]) == _CLOSE.index(ch):
+            j = stack.pop()
+            pairs[i], pairs[j] = j, i
+    return pairs
+
+
+def _strip_edges(word: str) -> tuple[str, str]:
+    """Strip edge quotes/brackets; return (core, trailing sentence punctuation).
+
+    Brackets go only when the pair encloses the whole word, or when an
+    unmatched opener starts / unmatched closer ends it. A half pair from
+    inside the word is never left dangling.
+    """
+    core, trail = word, ""
+    while core:
+        last = core[-1]
+        if last in TRAILING_PUNCT:
+            trail, core = last + trail, core[:-1]
+        elif last in _QUOTE_CLOSE and len(core) > 1:
+            core = core[:-1]
+        elif core[0] in _QUOTE_OPEN and len(core) > 1:
+            core = core[1:]
+        elif core[0] in _OPEN or last in _CLOSE:
+            pairs = _bracket_matches(core)
+            end = len(core) - 1
+            if core[0] in _OPEN and pairs.get(0, end) == end:
+                core = core[1:end] if pairs.get(0) == end else core[1:]
+            elif last in _CLOSE and end not in pairs:
+                core = core[:-1]
+            else:
+                break
+        else:
+            break
+    return core, trail
+
+
+def _flatten_brackets(core: str) -> str:
+    """Drop internal brackets; ``)(`` and ``x(`` mean implicit multiplication."""
+    out: list[str] = []
+    for i, ch in enumerate(core):
+        if ch in _OPEN + _CLOSE:
+            prev = core[i - 1] if i else ""
+            if ch == "(" and (prev.isalnum() or prev == ")"):
+                out.append(" times ")
+            else:
+                out.append(" ")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def speak_word(text: str, rules: Rules) -> list[str]:
     """Spoken tokens for one display word (possibly empty, e.g. a bare ``★``)."""
     tokens = _match_pattern(text, rules)
     if tokens is not None:
         return tokens
 
-    core = text
-    # Peel trailing closers and sentence punctuation; remember the punctuation.
-    trail = ""
-    while core and core[-1] in _CLOSERS + TRAILING_PUNCT:
-        ch = core[-1]
-        core = core[:-1]
-        if ch in TRAILING_PUNCT:
-            trail = ch + trail
-    core = core.lstrip(_OPENERS)
+    core, trail = _strip_edges(text)
     if not core:
         return []
 
@@ -98,7 +150,7 @@ def speak_word(text: str, rules: Rules) -> list[str]:
         if pq:
             tokens = [pq.group(1), *pq.group(2)]
         else:
-            tokens = _speak_chars(core, rules).split()
+            tokens = _speak_chars(_flatten_brackets(core), rules).split()
     if tokens and trail:
         tokens[-1] += trail
     return tokens

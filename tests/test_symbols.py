@@ -32,6 +32,15 @@ PACK_SYMBOLS = list("–’²“”−ω×★÷µ≈½̄′Δ√…Σ≠α") + [
         ("dN/dS.", ["d", "N", "over", "d", "S."]),
         ("this–that", ["this,", "that"]),
         ("–", []),
+        ("f[A1A1]", ["frequency", "of", "A", "1", "A", "1"]),
+        ("f[A1A1],", ["frequency", "of", "A", "1", "A", "1,"]),
+        ("(0.755)²", ["0.755", "squared"]),
+        ("2(0.6)(0.4)", ["2", "times", "0.6", "times", "0.4"]),
+        ("(p+q)²", ["p", "plus", "q", "squared"]),
+        ("(see", ["see"]),
+        ("that)", ["that"]),
+        ("(foo).", ["foo."]),
+        ("foo.),", ["foo.,"]),
         ("—", []),
         ("a—b", ["a,", "b"]),
         ("+", ["plus"]),
@@ -78,3 +87,19 @@ def test_real_pack_has_no_unknown_symbols(real_pack):
         for w in words:
             speak_word(w.text, rules)
     assert rules.unknown == set()
+
+
+def test_real_pack_tokens_have_no_brackets(real_pack):
+    doc = extract(real_pack)
+    rules = Rules.load()
+    bad = set()
+    for block in doc.blocks:
+        words = list(block.words)
+        if block.table:
+            words += [w for cell in block.table.header for w in cell]
+            words += [w for row in block.table.rows for cell in row for w in cell]
+        for w in words:
+            for tok in speak_word(w.text, rules):
+                if any(c in tok for c in "()[]"):
+                    bad.add(tok)
+    assert bad == set()

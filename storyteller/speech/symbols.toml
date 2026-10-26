@@ -1,6 +1,7 @@
 [patterns]   # regex → template; applied to the whole word
 '^dN/dS$' = "d N over d S"
-'^f\[([A-Za-z]\d?)\]$' = "frequency of {1}"
+'^f\[([A-Z])(\d)([A-Z])(\d)\]$' = "frequency of {1} {2} {3} {4}"
+'^f\[([A-Za-z0-9]+)\]$' = "frequency of {1}"
 '^([A-Z])(\d)([A-Z])(\d)$' = "{1} {2} {3} {4}"          # A1A2 → A 1 A 2
 [chars]
 "²" = " squared"
