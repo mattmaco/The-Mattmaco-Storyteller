@@ -120,12 +120,14 @@ def _strip_edges(word: str) -> tuple[str, str]:
 
 
 def _flatten_brackets(core: str) -> str:
-    """Drop internal brackets; ``)(`` and ``x(`` mean implicit multiplication."""
+    """Drop internal brackets; ``2(`` and ``)(`` read "times", ``w(`` reads "of"."""
     out: list[str] = []
     for i, ch in enumerate(core):
         if ch in _OPEN + _CLOSE:
             prev = core[i - 1] if i else ""
-            if ch == "(" and (prev.isalnum() or prev == ")"):
+            if ch == "(" and prev.isalpha():
+                out.append(" of ")
+            elif ch == "(" and (prev.isdigit() or prev == ")"):
                 out.append(" times ")
             else:
                 out.append(" ")
@@ -150,7 +152,9 @@ def speak_word(text: str, rules: Rules) -> list[str]:
         if pq:
             tokens = [pq.group(1), *pq.group(2)]
         else:
-            tokens = _speak_chars(_flatten_brackets(core), rules).split()
+            tokens = []
+            for part in _speak_chars(_flatten_brackets(core), rules).split():
+                tokens += _match_pattern(part, rules) or [part]
     if tokens and trail:
         tokens[-1] += trail
     return tokens
