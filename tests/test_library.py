@@ -106,7 +106,8 @@ def test_save_clip_clips_to_pcm16_range(lib, mini_bytes):
     path = lib.clip_path(info.id, sentence, "af_heart")
     lib.save_clip(path, SynthResult(np.array([2.0, -3.0, 0.5], dtype=np.float32), 24000, [(0.0, 0.1)]))
     audio, _ = sf.read(path, dtype="int16")
-    assert list(audio[:2]) == [32767, -32768] or list(audio[:2]) == [32767, -32767]
+    assert list(audio[:2]) == [32767, -32768]
+    assert audio[2] == pytest.approx(16384, abs=1)
     assert not list(path.parent.glob("*.tmp*"))
 
 
@@ -259,3 +260,42 @@ def test_script_options_mapping():
     assert o.read_boxes["analogy"] is False
     assert o.pronunciations == {"x": "y"} and o.pauses == s.pauses
     assert Settings().script_options().read_flags is False
+
+
+def test_settings_non_utf8_file_gives_defaults_and_backup():
+    (home() / "settings.json").write_bytes(b"\xff\xfe")
+    assert Settings.load() == Settings()
+    assert (home() / "settings.json.bak").read_bytes() == b"\xff\xfe"
+
+
+def test_settings_invalid_voice_falls_back():
+    (home() / "settings.json").write_text(json.dumps({"voice": "../evil"}))
+    assert Settings.load().voice == "af_heart"
+
+
+def test_settings_update_partial():
+    s = Settings.update(speed=1.5, voice="bf_emma")
+    assert (s.speed, s.voice) == (1.5, "bf_emma")
+    assert Settings.load().speed == 1.5
+    assert Settings.update(speed=9).speed == 2.0
+    with pytest.raises(ValueError):
+        Settings.update(bogus=1)
+
+
+def test_position_survives_rebuild(lib, plain_bytes):
+    info = lib.add_pdf(plain_bytes, "plain.pdf")
+    old = lib.script(info.id)
+    target = next(s for s in old.sentences if "Confidential" in " ".join(w.text for w in s.display))
+    later = old.sentences[old.sentences.index(target) + 1 :]
+    lib.set_position(info.id, target.id)
+    lib.add_skip_pattern(info.id, r"Confidential")
+    new = lib.script(info.id)
+    pos = lib.list()[0].position
+    assert pos in {s.id for s in new.sentences}
+    assert target.block_id not in {s.block_id for s in new.sentences}
+    assert not later or pos is not None
+    # an earlier sentence keeps its place
+    keep = new.sentences[1]
+    lib.set_position(info.id, keep.id)
+    lib.rebuild_script(info.id)
+    assert lib.list()[0].position == keep.id

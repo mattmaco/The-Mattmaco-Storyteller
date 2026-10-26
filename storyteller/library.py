@@ -18,7 +18,7 @@ import soundfile as sf
 
 from storyteller.extract import extract
 from storyteller.model import Script, Sentence
-from storyteller.settings import Settings, atomic_write, home
+from storyteller.settings import VOICE_RE, Settings, atomic_write, home
 from storyteller.speech import build_script
 from storyteller.speech.symbols import Rules
 from storyteller.voice.base import SynthResult
@@ -26,7 +26,6 @@ from storyteller.voice.base import SynthResult
 __all__ = ["Library", "PackInfo"]
 
 _ID = re.compile(r"[0-9a-f]{16}\Z")
-_VOICE = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 _LOCK = threading.RLock()  # guards every meta.json / script.json / skip.json / settings write
 
 
@@ -55,6 +54,24 @@ def _read_json(path: Path, default=None):
 
 def _clip_key(sentence: Sentence) -> str:
     return hashlib.sha1(sentence.spoken_text.encode("utf-8")).hexdigest()[:16]
+
+
+def _carry_position(position: str | None, old: Script | None, new: Script) -> str | None:
+    """Map a saved position onto a rebuilt script (ids are sequential, so they may shift)."""
+    if position is None or old is None or not new.sentences:
+        return None
+    prev = next((s for s in old.sentences if s.id == position), None)
+    if prev is None:
+        return None
+    same_id = next((s for s in new.sentences if s.id == position), None)
+    if same_id and same_id.block_id == prev.block_id:
+        return same_id.id
+    in_block = next((s for s in new.sentences if s.block_id == prev.block_id), None)
+    if in_block:
+        return in_block.id
+    at = (prev.display[0].page, prev.display[0].bbox[1])
+    after = next((s for s in new.sentences if (s.display[0].page, s.display[0].bbox[1]) >= at), None)
+    return (after or new.sentences[-1]).id
 
 
 class Library:
@@ -126,11 +143,10 @@ class Library:
         script = build_script(doc, pack_id, Settings.load().script_options(), rules)
         if rules.unknown:
             with _LOCK:
-                settings = Settings.load()
-                merged = sorted(set(settings.unknown_symbols) | set(rules.unknown))
-                if merged != settings.unknown_symbols:
-                    settings.unknown_symbols = merged
-                    settings.save()
+                known = Settings.load().unknown_symbols
+                merged = sorted(set(known) | set(rules.unknown))
+                if merged != known:
+                    Settings.update(unknown_symbols=merged)
         return script
 
     # ---- listing -----------------------------------------------------------
@@ -212,12 +228,12 @@ class Library:
 
     def rebuild_script(self, pack_id: str) -> Script:
         d = self._dir(pack_id)
+        old = self._load_script(pack_id)
         script = self._build(d / "source.pdf", pack_id, self._skip_patterns(pack_id))
         with _LOCK:
             atomic_write(d / "script.json", json.dumps(script.to_dict()))
             meta = self._meta(pack_id)
-            if meta.get("position") not in {s.id for s in script.sentences}:
-                meta["position"] = None
+            meta["position"] = _carry_position(meta.get("position"), old, script)
             meta["page_count"] = script.page_count
             atomic_write(d / "meta.json", json.dumps(meta))
         return script
@@ -248,7 +264,7 @@ class Library:
     # ---- clips -------------------------------------------------------------
 
     def clip_path(self, pack_id: str, sentence: Sentence, voice: str) -> Path:
-        if not _VOICE.match(voice):
+        if not VOICE_RE.match(voice):
             raise ValueError(f"invalid voice name: {voice!r}")
         return self._dir(pack_id) / "clips" / voice / f"{_clip_key(sentence)}.wav"
 

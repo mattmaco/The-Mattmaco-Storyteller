@@ -11,13 +11,17 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 import platformdirs
+import re
+import threading
 
 from storyteller.speech import BOX_KINDS, ScriptOptions
 
-__all__ = ["SPEED_MAX", "SPEED_MIN", "Settings", "atomic_write", "home"]
+__all__ = ["VOICE_RE", "SPEED_MAX", "SPEED_MIN", "Settings", "atomic_write", "home"]
 
 SPEED_MIN = 0.75
 SPEED_MAX = 2.0
+VOICE_RE = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
+_SETTINGS_LOCK = threading.RLock()
 
 
 def home() -> Path:
@@ -69,11 +73,13 @@ class Settings:
         path = cls.path()
         try:
             raw = path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return cls()
         except OSError:
             return cls()
+        except UnicodeDecodeError:
+            raw = None
         try:
+            if raw is None:
+                raise ValueError("settings.json is not UTF-8")
             saved = json.loads(raw)
             if not isinstance(saved, dict):
                 raise ValueError("settings.json is not an object")
@@ -114,9 +120,26 @@ class Settings:
             elif f.name == "unknown_symbols":
                 if isinstance(value, list) and all(isinstance(v, str) for v in value):
                     s.unknown_symbols = list(value)
+            elif f.name == "voice":
+                if isinstance(value, str) and VOICE_RE.match(value):
+                    s.voice = value
             elif isinstance(value, type(current)):
                 setattr(s, f.name, value)
         return s
+
+    @classmethod
+    def update(cls, **partial) -> "Settings":
+        """Load, apply ``partial`` field values, save; atomic against other updaters."""
+        with _SETTINGS_LOCK:
+            s = cls.load()
+            names = {f.name for f in fields(cls)}
+            unknown = set(partial) - names
+            if unknown:
+                raise ValueError(f"unknown settings: {sorted(unknown)}")
+            merged = {**s.__dict__, **partial}
+            s = cls._from_saved(merged)
+            s.save()
+            return s
 
     def save(self) -> None:
         atomic_write(self.path(), json.dumps(self.__dict__, indent=2, ensure_ascii=False))
