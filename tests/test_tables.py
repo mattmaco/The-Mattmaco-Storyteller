@@ -116,3 +116,12 @@ def test_real_pack_no_body_row_has_empty_first_cell(real_doc):
     for pno in range(len(real_doc)):
         for _, table in find_tables(real_doc[pno], pno):
             assert all(row[0] for row in table.rows), pno
+
+
+def test_real_pack_separate_rows_stay_separate(real_doc):
+    counts = lambda pno: [len(t.rows) for _, t in find_tables(real_doc[pno], pno)]  # noqa: E731
+    assert counts(4) == [3, 3]
+    assert counts(24) == [3]  # Consequence items 1., 2., 3.
+    assert counts(27) == [3]  # Synonymous, Nonsynonymous, Noncoding
+    firsts = [_cell(r[0]) for _, t in find_tables(real_doc[15], 15) for r in t.rows]
+    assert "1 2" not in firsts and firsts[:2] == ["1", "2"]

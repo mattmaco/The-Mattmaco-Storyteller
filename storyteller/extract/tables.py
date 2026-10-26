@@ -13,7 +13,7 @@ from storyteller.extract.common import CITE_COLOURS, collapse_punct, strip_inlin
 from storyteller.extract.pdfwords import RawSpan, join_lines, read_spans_with_chars, span_words
 from storyteller.model import BBox, OutlineEntry, Table, Word
 
-WRAP_GAP = 0.25  # a line starting closer than this fraction of its height under the previous one wraps it
+WRAP_GAP = 1.4  # points: a line starting closer than this under the previous one wraps it (measured: wraps <= 1.26, rows >= 1.63 except one page-0 row at 1.15)
 LINE_TOLERANCE = 0.5  # fraction of a span's height within which two segments share a line
 
 
@@ -85,8 +85,7 @@ def _merge_wrapped(grid: list[list[list[Word]]]) -> list[list[list[Word]]]:
             continue
         if ext is None:
             continue
-        height = ext[1] - ext[0]
-        if len(out) > 1 and ext[0] - bottom < WRAP_GAP * height:
+        if len(out) > 1 and ext[0] - bottom < WRAP_GAP:
             out[-1] = [collapse_punct(join_lines([a, b])) for a, b in zip(out[-1], row)]
             bottom = max(bottom, ext[1])
         else:
