@@ -80,3 +80,49 @@ def test_real_pack_profile(real_pack):
     doc = extract(real_pack)
     assert doc.profile == "studypack"
     assert doc.title.strip()
+
+
+def _pdf_with(tmp_path, draw):
+    doc = pymupdf.open()
+    draw(doc.new_page(width=612, height=792))
+    path = tmp_path / "gen.pdf"
+    doc.save(str(path))
+    return path
+
+
+FILLER = " ".join(["words"] * 12)
+SHORT = " ".join(["words"] * 4)  # fits within one column
+
+
+def test_cite_with_space_after_comma(tmp_path):
+    def draw(page):
+        page.insert_text((50, 100), f"See [4, 5] and [6] now. {FILLER} {FILLER}", fontsize=10)
+
+    doc = extract(_pdf_with(tmp_path, draw))
+    text = _text(doc)
+    assert text.startswith("See and now.")
+    assert "[" not in text
+
+
+def test_two_column_order(tmp_path):
+    def draw(page):
+        for x, tag in ((50, "A"), (330, "B")):
+            for i, y in enumerate((100, 200), 1):
+                page.insert_text((x, y), f"{tag}{i} {SHORT}", fontsize=10)
+        # right column starts higher than the left's second block, so a y-sort would interleave
+        page.insert_text((330, 150), f"B1b {SHORT}", fontsize=10)
+
+    doc = extract(_pdf_with(tmp_path, draw))
+    firsts = [b.words[0].text for b in doc.blocks]
+    assert firsts == ["A1", "A2", "B1", "B1b", "B2"]
+
+
+def test_heading3_bold_slightly_larger(tmp_path):
+    def draw(page):
+        page.insert_text((50, 100), "Sub topic", fontsize=11.5, fontname="hebo")
+        for i in range(4):
+            page.insert_text((50, 130 + 30 * i), f"para{i} {FILLER}", fontsize=10)
+
+    doc = extract(_pdf_with(tmp_path, draw))
+    assert doc.blocks[0].role == "heading3"
+    assert all(b.role == "body" for b in doc.blocks[1:])

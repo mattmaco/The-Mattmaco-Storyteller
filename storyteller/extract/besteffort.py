@@ -15,7 +15,7 @@ from storyteller.extract.tables import build_outline, find_tables
 from storyteller.model import BBox, Block, Document, OutlineEntry, Table, Word
 
 CITE_RES = [
-    re.compile(r"\[\d+(?:[,–-]\d+)*\]"),
+    re.compile(r"\[\d+(?:\s*[,–-]\s*\d+)*\]"),
     re.compile(r"\([A-Z][A-Za-z]+(?: et al\.)?,? \d{4}[a-z]?\)"),
 ]
 EDGE_FRACTION = 0.08  # top/bottom band searched for running headers and footers
@@ -99,6 +99,40 @@ def _strip_cites(words: list[Word]) -> list[Word]:
     return out
 
 
+def _reading_order(items: list[tuple[BBox, Block]], page_width: float) -> list[Block]:
+    """Top-to-bottom order, except that a two-column page reads left column then right.
+
+    A page counts as two-column when at least two blocks sit wholly left of the page
+    middle and at least two wholly right of it. Blocks straddling the middle (titles,
+    full-width tables) stay in place and split the page into independent bands.
+    """
+    mid = page_width / 2
+    items = sorted(items, key=lambda it: it[0][1])
+    left = [it for it in items if it[0][2] <= mid + 5]
+    right = [it for it in items if it[0][0] >= mid - 5]
+    if len(left) < 2 or len(right) < 2:
+        return [b for _, b in items]
+    out: list[Block] = []
+    band_l: list[Block] = []
+    band_r: list[Block] = []
+
+    def flush() -> None:
+        out.extend(band_l + band_r)
+        band_l.clear()
+        band_r.clear()
+
+    for box, b in items:
+        if box[2] <= mid + 5:
+            band_l.append(b)
+        elif box[0] >= mid - 5:
+            band_r.append(b)
+        else:
+            flush()
+            out.append(b)
+    flush()
+    return out
+
+
 def _role(sizes: list[tuple[float, bool, int]], body: float) -> str:
     """Role of a block from its (size, bold, nchars) spans against the document body size."""
     total = sum(n for _, _, n in sizes) or 1
@@ -131,7 +165,7 @@ def besteffort_blocks(doc: pymupdf.Document, skip_patterns: list[str] | None = N
     blocks: list[Block] = []
     for pno, page in enumerate(doc):
         h = page.rect.height
-        made: list[tuple[float, Block]] = []
+        made: list[tuple[BBox, Block]] = []
         for _, lines in sorted(lines_by_page[pno].items()):
             kept = [
                 ln for ln in lines
@@ -143,15 +177,13 @@ def besteffort_blocks(doc: pymupdf.Document, skip_patterns: list[str] | None = N
             if not words or any(rx.search(" ".join(w.text for w in words)) for rx in skips):
                 continue
             spans = [(s.size, s.bold, sum(1 for c in chars if not c["c"].isspace())) for ln in kept for s, chars in ln.parts]
-            top = min(ln.bbox[1] for ln in kept)
-            made.append((top, Block("", _role(spans, body), words, pno)))
+            made.append((_union(ln.bbox for ln in kept), Block("", _role(spans, body), words, pno)))
         for rect, table in tables_by_page[pno]:
             cells = list(table.header) + [c for row in table.rows for c in row]
             words = [w for c in cells for w in c]
             if words:
-                made.append((rect[1], Block("", "table", words, pno, table=table)))
-        made.sort(key=lambda item: item[0])
-        for n, (_, b) in enumerate(made):
+                made.append((rect, Block("", "table", words, pno, table=table)))
+        for n, b in enumerate(_reading_order(made, page.rect.width)):
             b.id = f"b{pno:03d}_{n:03d}"
             blocks.append(b)
     return blocks
