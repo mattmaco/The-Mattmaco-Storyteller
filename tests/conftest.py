@@ -22,3 +22,8 @@ def real_pack() -> Path:
 def _storyteller_env(monkeypatch, tmp_path):
     monkeypatch.setenv("STORYTELLER_HOME", str(tmp_path))
     monkeypatch.setenv("STORYTELLER_VOICE", "stub")
+
+
+@pytest.fixture
+def plain_pdf() -> Path:
+    return FIXTURES / "plain_report.pdf"

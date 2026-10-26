@@ -51,10 +51,15 @@ def _keep_char(ch: dict) -> bool:
     )
 
 
-def read_spans_with_chars(page: pymupdf.Page, page_no: int) -> list[tuple[RawSpan, list]]:
-    """Each span paired with its (zero-area-filtered) rawdict chars, for span_words."""
+def read_spans_with_chars(
+    page: pymupdf.Page, page_no: int, sort: bool = False
+) -> list[tuple[RawSpan, list]]:
+    """Each span paired with its (zero-area-filtered) rawdict chars, for span_words.
+
+    `sort=True` asks PyMuPDF for top-to-bottom block order (the best-effort profile).
+    """
     out: list[tuple[RawSpan, list]] = []
-    data = page.get_text("rawdict", sort=False)
+    data = page.get_text("rawdict", sort=sort)
     for block_no, block in enumerate(data["blocks"]):
         if block.get("type") != 0:
             continue

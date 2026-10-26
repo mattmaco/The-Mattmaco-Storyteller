@@ -13,6 +13,7 @@ from pathlib import Path
 import pymupdf
 
 OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "studypack_mini.pdf"
+PLAIN_OUT = OUT.with_name("plain_report.pdf")
 
 PAGE_W, PAGE_H = 612, 792
 LEFT, RIGHT = 50.25, 562.5
@@ -268,6 +269,46 @@ def page_three(page) -> None:
     footer(page, 3, 3)
 
 
+PLAIN_PAGES = [
+    ("Findings", [
+        ["Water use fell across the region during the year [3].",
+         "Smaller farms led the change (Smith et al., 2020) in most districts."],
+        ["Researchers credit new irrigation schedules for the steady decline",
+         "and expect the trend to continue next season."],
+    ]),
+    ("Methods", [
+        ["Each site was visited monthly and readings were logged by hand.",
+         "Totals were checked against meter records [4–5]."],
+        ["Confidential: raw site names are withheld from this report."],
+    ]),
+    ("Outlook", [
+        ["Planners will review the schedules again next spring (Jones, 2021a)",
+         "before any new targets are set for the coming years."],
+    ]),
+]
+
+
+def plain_page(page, n: int, heading: str, paragraphs: list[list[str]]) -> None:
+    """A non-study-pack page: running header and footer, a heading and plain paragraphs."""
+    setup_fonts(page)
+    put(page, LEFT, 30, "Annual Report 2026", 9, GREY)
+    put(page, LEFT, 90, heading, 18, TEXT, bold=True)
+    y = 125.0
+    for para in paragraphs:
+        y = lines(page, LEFT, y, para, size=10.5) + 14
+    label = f"- {n} -"
+    put(page, PAGE_W / 2 - width(label, 9) / 2, 765, label, 9, GREY)
+
+
+def make_plain_report() -> None:
+    doc = pymupdf.open()
+    for n, (heading, paragraphs) in enumerate(PLAIN_PAGES, 1):
+        plain_page(doc.new_page(width=PAGE_W, height=PAGE_H), n, heading, paragraphs)
+    doc.set_metadata({"title": "", "producer": "make_fixture.py", "creationDate": "", "modDate": ""})
+    doc.save(str(PLAIN_OUT), garbage=4, deflate=True, no_new_id=True)
+    print(f"wrote {PLAIN_OUT}")
+
+
 def main() -> None:
     doc = pymupdf.open()
     for build in (page_one, page_two, page_three):
@@ -277,6 +318,7 @@ def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(OUT), garbage=4, deflate=True, no_new_id=True)
     print(f"wrote {OUT}")
+    make_plain_report()
 
 
 if __name__ == "__main__":
