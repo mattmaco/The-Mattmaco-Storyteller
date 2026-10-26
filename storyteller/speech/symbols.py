@@ -13,6 +13,7 @@ _OPENERS = "\"'([{“‘"
 _CLOSERS = "\"')]}”’"
 _PQ = re.compile(r"^(\d+)([pq]{2,3})$")
 _EN_DASH = "–"
+_EM_DASH = "—"
 
 
 @dataclass
@@ -45,10 +46,10 @@ def _match_pattern(word: str, rules: Rules) -> list[str] | None:
 def _speak_chars(core: str, rules: Rules) -> str:
     out: list[str] = []
     for i, ch in enumerate(core):
-        if ch == _EN_DASH:
+        if ch in (_EN_DASH, _EM_DASH):
             before = core[i - 1] if i else ""
             after = core[i + 1] if i + 1 < len(core) else ""
-            if before.isdigit() and after.isdigit():
+            if ch == _EN_DASH and before.isdigit() and after.isdigit():
                 out.append(" to ")
             else:
                 # Pause: a comma on the preceding text; nothing if there is none.
