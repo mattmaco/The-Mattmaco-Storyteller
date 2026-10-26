@@ -145,3 +145,128 @@ def test_kokoro_chunks_get_time_offsets():
     r = kv.synth(["one,", "two"], "af_heart")
     assert len(r.audio) == 36000
     assert r.word_times == [(0.0, 0.5), (pytest.approx(1.1), pytest.approx(1.4))]
+
+
+def _fake_torch(monkeypatch, cuda_ok, available=True):
+    import sys
+    from types import SimpleNamespace as NS
+
+    def zeros(*a, device=None, **k):
+        if device == "cuda" and not cuda_ok:
+            raise RuntimeError("CUDA error")
+
+    def is_available():
+        if available == "raise":
+            raise RuntimeError("driver")
+        return available
+
+    monkeypatch.setitem(sys.modules, "torch", NS(zeros=zeros, cuda=NS(is_available=is_available)))
+
+
+def _fake_kokoro(monkeypatch, fail):
+    import sys
+    from types import SimpleNamespace as NS
+
+    built = []
+
+    class KPipeline:
+        def __init__(self, lang_code, device):
+            if fail is not None and device == "cuda":
+                raise fail
+            self.lang_code, self.device = lang_code, device
+            built.append((lang_code, device))
+
+    monkeypatch.setitem(sys.modules, "kokoro", NS(KPipeline=KPipeline))
+    return built
+
+
+def test_cuda_init_failure_falls_back(monkeypatch):
+    from storyteller.voice.kokoro_backend import KokoroVoice
+
+    _fake_torch(monkeypatch, cuda_ok=False)
+    kv = KokoroVoice()
+    assert (kv.device, kv.notice) == ("cpu", "GPU unavailable, using CPU")
+
+
+def test_cuda_probe_exception_falls_back(monkeypatch):
+    from storyteller.voice.kokoro_backend import KokoroVoice
+
+    _fake_torch(monkeypatch, cuda_ok=True, available="raise")
+    kv = KokoroVoice()
+    assert (kv.device, kv.notice) == ("cpu", "GPU unavailable, using CPU")
+
+
+def test_no_cuda_is_plain_cpu(monkeypatch):
+    from storyteller.voice.kokoro_backend import KokoroVoice
+
+    _fake_torch(monkeypatch, cuda_ok=True, available=False)
+    kv = KokoroVoice()
+    assert (kv.device, kv.notice) == ("cpu", None)
+
+
+def test_pipeline_runtimeerror_on_cuda_falls_back(monkeypatch):
+    from storyteller.voice.kokoro_backend import KokoroVoice
+
+    _fake_torch(monkeypatch, cuda_ok=True)
+    _fake_kokoro(monkeypatch, RuntimeError("CUDA out of memory"))
+    kv = KokoroVoice()
+    assert kv.device == "cuda"
+    assert kv._pipeline("a").device == "cpu"
+    assert (kv.device, kv.notice) == ("cpu", "GPU unavailable, using CPU")
+
+
+def test_pipeline_non_runtime_error_propagates(monkeypatch):
+    from storyteller.voice.kokoro_backend import KokoroVoice
+
+    _fake_torch(monkeypatch, cuda_ok=True)
+    _fake_kokoro(monkeypatch, OSError("weights download failed"))
+    kv = KokoroVoice()
+    with pytest.raises(OSError):
+        kv._pipeline("a")
+    assert (kv.device, kv.notice) == ("cuda", None)
+
+
+def test_late_fallback_rebuilds_other_pipelines_on_cpu(monkeypatch):
+    from storyteller.voice.kokoro_backend import KokoroVoice
+
+    _fake_torch(monkeypatch, cuda_ok=True)
+    _fake_kokoro(monkeypatch, None)
+    kv = KokoroVoice()
+    first = kv._pipeline("a")
+    assert first.device == "cuda"
+    import kokoro
+
+    def failing(lang_code, device):
+        if device == "cuda":
+            raise RuntimeError("CUDA error")
+        return first.__class__(lang_code, device)
+
+    monkeypatch.setattr(kokoro, "KPipeline", failing)
+    assert kv._pipeline("b").device == "cpu"
+    assert kv.device == "cpu"
+    assert kv._pipeline("a").device == "cpu"  # rebuilt, not the stale cuda one
+
+
+def test_get_backend_thread_safe(monkeypatch):
+    import threading
+
+    import storyteller.voice as v
+    from storyteller.voice import stub
+
+    monkeypatch.setattr(v, "_backend", None)
+    made = []
+    orig = stub.StubVoice
+
+    class Slow(orig):
+        def __init__(self):
+            import time
+
+            time.sleep(0.05)
+            made.append(self)
+
+    monkeypatch.setattr(stub, "StubVoice", Slow)
+    got = []
+    ts = [threading.Thread(target=lambda: got.append(v.get_backend())) for _ in range(8)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert len(made) == 1 and len({id(g) for g in got}) == 1

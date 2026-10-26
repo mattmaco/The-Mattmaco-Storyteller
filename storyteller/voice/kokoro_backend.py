@@ -14,14 +14,14 @@ class KokoroVoice:
         self._torch = torch
         self.notice: str | None = None
         self._pipelines: dict[str, object] = {}
-        if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        if device == "cuda":
-            try:
+        try:
+            if device is None:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+            if device == "cuda":
                 torch.zeros(1, device="cuda")
-            except Exception:
-                device = "cpu"
-                self.notice = "GPU unavailable, using CPU"
+        except Exception:
+            device = "cpu"
+            self.notice = "GPU unavailable, using CPU"
         self.device = device
 
     def _pipeline(self, lang: str):
@@ -31,11 +31,12 @@ class KokoroVoice:
 
             try:
                 pipe = KPipeline(lang_code=lang, device=self.device)
-            except Exception:
+            except RuntimeError:  # CUDA failures only; network/weights errors propagate
                 if self.device != "cuda":
                     raise
                 self.device = "cpu"
                 self.notice = "GPU unavailable, using CPU"
+                self._pipelines.clear()  # others were built on cuda; rebuild lazily on cpu
                 pipe = KPipeline(lang_code=lang, device="cpu")
             self._pipelines[lang] = pipe
         return pipe
