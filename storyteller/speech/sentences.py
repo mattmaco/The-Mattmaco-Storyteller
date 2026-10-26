@@ -7,7 +7,7 @@ import re
 from storyteller.model import SpokenWord, Word
 
 _ENDERS = ".?!"
-_CLOSERS = "\"')]}”’"
+CLOSERS = "\"')]}”’"
 _OPENERS = "\"'([{“‘"
 _QUOTES = "\"'“‘"
 _ABBREVIATIONS = {
@@ -45,7 +45,7 @@ def split_sentences(words: list[Word]) -> list[list[Word]]:
         depth = max(0, depth + word.text.count("(") - word.text.count(")"))
         if i + 1 == len(words) or depth:
             continue
-        core = word.text.rstrip(_CLOSERS)
+        core = word.text.rstrip(CLOSERS)
         if not core or core[-1] not in _ENDERS:
             continue
         if core.endswith(".") and _is_abbreviation(core):
@@ -69,7 +69,8 @@ def split_long(spoken: list[SpokenWord], limit: int = 300) -> list[list[SpokenWo
 
     Each cut goes after the last token ending in ``; , — :`` that keeps the
     part within the limit; failing that, at the last word boundary that does.
-    A single token longer than the limit becomes a part of its own.
+    A single token longer than the limit is cut into limit-sized pieces, each
+    mapped to the token's display word.
     """
     parts: list[list[SpokenWord]] = []
     rest = list(spoken)
@@ -82,7 +83,15 @@ def split_long(spoken: list[SpokenWord], limit: int = 300) -> list[list[SpokenWo
         while fit < len(rest) and size + 1 + len(rest[fit].text) <= limit:
             size += 1 + len(rest[fit].text)
             fit += 1
-        cut = max(fit, 1)
+        if fit == 0:  # one token longer than the limit: cut the token itself
+            token = rest.pop(0)
+            text = token.text
+            parts.extend(
+                [SpokenWord(text[i : i + limit], token.word_index)]
+                for i in range(0, len(text), limit)
+            )
+            continue
+        cut = fit
         for k in range(fit, 0, -1):
             if rest[k - 1].text[-1:] in _SOFT_BREAKS:
                 cut = k

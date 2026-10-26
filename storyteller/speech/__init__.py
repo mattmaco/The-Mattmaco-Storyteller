@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
-from storyteller.model import Block, Document, Script, Sentence, SpokenWord, Word
+from storyteller.model import Block, Document, OutlineEntry, Script, Sentence, SpokenWord, Word
 from storyteller.speech.pronounce import apply_pronunciations
-from storyteller.speech.sentences import split_long, split_sentences
+from storyteller.speech.sentences import CLOSERS, split_long, split_sentences
 from storyteller.speech.symbols import TRAILING_PUNCT, Rules, speak_word
 from storyteller.speech.tables import linearise_table_mapped
 
@@ -19,7 +19,6 @@ BADGES = {"Stated", "Follows"}
 SPOKEN_LIMIT = 300
 _KIND = {"heading1": "heading", "heading2": "heading", "heading3": "heading",
          "box_label": "box_label", "table": "table"}
-_CLOSERS = "\"')]}”’"
 
 # A sentence before speaking: (display-word text or lead token, index into display).
 _Item = tuple[str, int]
@@ -37,7 +36,7 @@ class ScriptOptions:
 
 
 def _trailing_punct(text: str) -> str:
-    core = text.rstrip(_CLOSERS + TRAILING_PUNCT)
+    core = text.rstrip(CLOSERS + TRAILING_PUNCT)
     return "".join(c for c in text[len(core):] if c in TRAILING_PUNCT)
 
 
@@ -105,18 +104,38 @@ def _parts(spoken: list[SpokenWord], display: list[Word]) -> list[tuple[list[Spo
     return out
 
 
-def _assign_outline(doc: Document, sentences: list[Sentence]) -> list:
-    # A heading's top (y0) sits a few points above its outline y, so a sentence
-    # counts as "at or after" the entry when its first word's bottom is below y.
+def _normalise(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def _titled_heading(entry: OutlineEntry, sentences: list[Sentence]) -> str | None:
+    """First heading sentence on the entry's page whose text starts with its title."""
+    title = _normalise(entry.title)
+    if not title:
+        return None
+    for s in sentences:
+        if s.kind != "heading" or s.display[0].page != entry.page:
+            continue
+        text = _normalise(" ".join(w.text for w in s.display))
+        if text.startswith(title) and not text[len(title) : len(title) + 1].isalnum():
+            return s.id
+    return None
+
+
+def _assign_outline(doc: Document, sentences: list[Sentence]) -> list[OutlineEntry]:
+    # Prefer the heading that carries the entry's title: pages laid out in
+    # columns put later entries beside, not below, earlier text. Otherwise take
+    # the first sentence at or after (page, y); a heading's top (y0) sits a few
+    # points above its outline y, so compare the first word's bottom (y1).
     keys = [(s.display[0].page, s.display[0].bbox[3]) for s in sentences]
     outline = []
     for entry in doc.outline:
-        sid = next(
+        sid = _titled_heading(entry, sentences) or next(
             (s.id for s, (page, bottom) in zip(sentences, keys)
              if page > entry.page or (page == entry.page and bottom > entry.y)),
             sentences[-1].id if sentences else None,
         )
-        outline.append(type(entry)(entry.level, entry.title, entry.page, entry.y, sid))
+        outline.append(replace(entry, sentence_id=sid))
     return outline
 
 

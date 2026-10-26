@@ -94,6 +94,14 @@ def test_split_long_prefers_punctuation_and_hard_splits():
     assert sum(len(p) for p in parts) == 80
 
 
+def test_split_long_cuts_overlong_token():
+    spoken = [SpokenWord("short,", 0), SpokenWord("x" * 700, 1), SpokenWord("tail.", 2)]
+    parts = split_long(spoken)
+    assert all(len(" ".join(w.text for w in p)) <= 300 for p in parts)
+    assert "".join(w.text for p in parts for w in p if w.word_index == 1) == "x" * 700
+    assert [w.word_index for p in parts for w in p] == [0, 1, 1, 1, 2]
+
+
 # --- tables ----------------------------------------------------------------
 
 
@@ -286,3 +294,33 @@ def test_real_pack_script(real_doc):
     chunks = [e for e in script.outline if e.level == 2 and re.match(r"\d+\. ", e.title)]
     assert len(chunks) == 35
     assert all(e.sentence_id in ids for e in script.outline)
+
+
+def _norm(text):
+    return " ".join(text.split()).casefold()
+
+
+def test_real_pack_outline_finds_titled_headings(real_doc):
+    script = build_script(real_doc, "biol2040", ScriptOptions())
+    checked = 0
+    for entry in script.outline:
+        title = _norm(entry.title)
+        match = next(
+            (
+                s.id
+                for s in script.sentences
+                if s.kind == "heading"
+                and s.display[0].page == entry.page
+                and re.match(re.escape(title) + r"(?![a-z0-9])", _norm(" ".join(w.text for w in s.display)))
+            ),
+            None,
+        )
+        if match:
+            checked += 1
+            assert entry.sentence_id == match, entry.title
+    assert checked >= 30  # chunk titles carry a "N. " prefix the heading text lacks
+    by_title = {e.title: e.sentence_id for e in script.outline if e.page == 54}
+    assert all(
+        next(s for s in script.sentences if s.id == by_title[t]).kind == "heading"
+        for t in ("Lecture 11", "Lecture 12", "Lecture 13")
+    )
