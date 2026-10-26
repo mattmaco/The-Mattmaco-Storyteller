@@ -4,6 +4,14 @@ import * as pdfjs from "../vendor/pdfjs/pdf.mjs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdfjs/pdf.worker.mjs", import.meta.url).href;
 
+function scrollRoot(el) {
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if (o === "auto" || o === "scroll") return p;
+  }
+  return null;
+}
+
 /**
  * @returns {Promise<{pageIndex:number, el:HTMLElement, scale:number, width:number, height:number}[]>}
  * width/height are the page size in PDF points; scale = el.clientWidth / width (pixels per point).
@@ -33,6 +41,14 @@ export async function renderPages(container, pdfUrl) {
     for (const v of views) v.scale = v.el.clientWidth / v.width;
   };
 
+  function release(v) {
+    if (v.task) v.task.cancel();
+    v.task = null;
+    v.drawnAt = 0;
+    v.el.querySelector("canvas")?.remove();
+    delete v.el.dataset.rendered;
+  }
+
   async function draw(v) {
     const px = v.el.clientWidth;
     if (!px) return;
@@ -61,6 +77,9 @@ export async function renderPages(container, pdfUrl) {
     v.el.dataset.rendered = "true";
   }
 
+  // Observe against the scrolling ancestor: with the viewport as root, the
+  // scroller's clipping would make rootMargin useless.
+  const root = scrollRoot(container);
   const visible = new Set();
   const io = new IntersectionObserver(
     (entries) => {
@@ -74,9 +93,18 @@ export async function renderPages(container, pdfUrl) {
         }
       }
     },
-    { rootMargin: "800px 0px" },
+    { root, rootMargin: "800px 0px" },
   );
   views.forEach((v) => io.observe(v.el));
+
+  // Free canvases of pages more than 3 viewport heights away; they redraw on return.
+  const keep = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) if (!e.isIntersecting) release(views[Number(e.target.dataset.page)]);
+    },
+    { root, rootMargin: "300% 0px" },
+  );
+  views.forEach((v) => keep.observe(v.el));
 
   let pending = 0;
   new ResizeObserver(() => {

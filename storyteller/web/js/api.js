@@ -22,14 +22,20 @@ async function request(url, options) {
       message: body.message || detail || `Request failed (${res.status})`,
     };
   }
-  return res.status === 204 ? null : res.json();
+  if (res.status === 204) return null;
+  try {
+    return await res.json();
+  } catch (e) {
+    throw { offline: true }; // connection dropped (or garbage) while reading the body
+  }
 }
 
-function sendJson(method, url, body) {
+function sendJson(method, url, body, extra) {
   return request(url, {
     method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    ...extra,
   });
 }
 
@@ -46,7 +52,9 @@ export function uploadPdf(file) {
 export const getScript = (id) => request(`${pack(id)}/script`);
 export const getClip = (id, sid) => request(`${pack(id)}/clip/${encodeURIComponent(sid)}`);
 export const focus = (id, sid) => sendJson("POST", `${pack(id)}/focus`, { sentence_id: sid });
-export const savePosition = (id, sid) => sendJson("PUT", `${pack(id)}/position`, { sentence_id: sid });
+/** `keepalive: true` lets the save finish while the page unloads. */
+export const savePosition = (id, sid, { keepalive = false } = {}) =>
+  sendJson("PUT", `${pack(id)}/position`, { sentence_id: sid }, keepalive ? { keepalive: true } : undefined);
 export const getSettings = () => request("/api/settings");
 export const putSettings = (partial) => sendJson("PUT", "/api/settings", partial);
 export const getStatus = () => request("/api/status");

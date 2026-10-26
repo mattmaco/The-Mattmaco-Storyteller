@@ -6,10 +6,14 @@ const message = document.getElementById("message");
 const drop = document.getElementById("drop");
 const input = document.getElementById("file-input");
 let timer = null;
+let lastInfo = ""; // last non-error message, restored once a failed refresh recovers
+let refreshError = null; // text of the refresh failure currently shown, if any
 
 function say(text, isError) {
   message.textContent = text;
   message.classList.toggle("error", !!isError);
+  if (!isError) lastInfo = text;
+  refreshError = null;
 }
 
 function describe(e) {
@@ -57,9 +61,13 @@ async function refresh() {
     const packs = await listPacks();
     list.replaceChildren(...packs.map(packItem));
     empty.hidden = packs.length > 0;
+    if (refreshError !== null && message.textContent === refreshError) say(lastInfo, false);
     if (packs.some((p) => p.rendered < p.total)) timer = setTimeout(refresh, 4000);
   } catch (e) {
-    say(describe(e), true);
+    const text = describe(e);
+    say(text, true);
+    refreshError = text;
+    timer = setTimeout(refresh, 4000); // keep trying; the server may come back
   }
 }
 
@@ -99,5 +107,7 @@ for (const t of ["dragleave", "drop"]) {
   });
 }
 drop.addEventListener("drop", (e) => addFile(e.dataTransfer.files[0]));
+// A file dropped anywhere else must not navigate away from the app.
+for (const t of ["dragover", "drop"]) window.addEventListener(t, (e) => e.preventDefault());
 
 refresh();

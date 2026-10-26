@@ -111,3 +111,26 @@ export function hitTest(pageIndex, x, y) {
   }
   return best;
 }
+
+export function clearWord() {
+  drop(".hl-word");
+}
+
+export const SKIPPED_TEXT = "Skipped — couldn't read this sentence";
+
+/** Mark a sentence whose clip failed, at its first display word. Kept until reload. */
+export function showSkipped(sentence, pageViews) {
+  const w = sentence && sentence.display[0];
+  const view = w && pageViews[w.page];
+  if (!view || document.querySelector(`.skipped-marker[data-sid="${CSS.escape(sentence.id)}"]`)) return;
+  const mark = document.createElement("span");
+  mark.className = "skipped-marker";
+  mark.dataset.sid = sentence.id;
+  mark.setAttribute("role", "note");
+  mark.setAttribute("aria-label", SKIPPED_TEXT);
+  mark.title = SKIPPED_TEXT;
+  mark.textContent = "Skipped";
+  mark.style.left = `${(w.bbox[0] / view.width) * 100}%`;
+  mark.style.top = `${(w.bbox[1] / view.height) * 100}%`;
+  layerOf(view).append(mark);
+}
