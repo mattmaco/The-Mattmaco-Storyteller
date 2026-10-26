@@ -1,5 +1,32 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Storyteller</title></head>
-<body><main><h1>Storyteller</h1><p>Library placeholder; replaced in Task 11.</p></main></body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storyteller</title>
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body class="library">
+  <main>
+    <h1>Storyteller</h1>
+    <p class="lead">Your study packs. Nothing plays until you press play.</p>
+
+    <section aria-labelledby="packs-h">
+      <h2 id="packs-h" class="section-title">Your packs</h2>
+      <ul id="pack-list" class="packs"></ul>
+      <p id="empty" class="muted" hidden>No packs yet. Add a PDF below.</p>
+    </section>
+
+    <section aria-labelledby="add-h">
+      <h2 id="add-h" class="section-title">Add a PDF</h2>
+      <div id="drop" class="drop" role="button" tabindex="0" aria-label="Add a PDF: drop a file here or press Enter to choose one">
+        <strong>Drop a PDF here</strong>
+        <span>or press Enter / click to choose a file</span>
+      </div>
+      <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
+      <p id="message" class="message" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+  <script type="module" src="/web/js/library.js"></script>
+</body>
 </html>

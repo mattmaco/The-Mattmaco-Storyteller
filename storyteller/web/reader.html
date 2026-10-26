@@ -1,5 +1,68 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Storyteller reader</title></head>
-<body><main><h1>Reader</h1><p>Reader placeholder; replaced in Task 11.</p></main></body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storyteller reader</title>
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body class="reader">
+  <div id="reconnect" class="banner" role="status" hidden>Lost the connection to Storyteller. Trying to reconnect…</div>
+  <div class="layout">
+    <nav id="outline" aria-label="Outline"></nav>
+    <div class="centre">
+      <p id="error" class="message error" role="alert" hidden></p>
+      <main id="pages" aria-label="Document pages"></main>
+      <main id="clean" aria-label="Clean reading view" hidden></main>
+      <button id="back-to-reading" type="button" class="floating" aria-label="Back to reading" hidden>Back to reading</button>
+    </div>
+  </div>
+  <footer id="bar">
+    <a class="link" href="/" aria-label="Back to library">Library</a>
+    <button id="play" type="button" class="primary" aria-label="Play" disabled>Play</button>
+    <span id="speed" aria-label="Speed">1.0×</span>
+    <progress id="progress" max="1" value="0" aria-label="Reading progress"></progress>
+    <span id="remaining" aria-label="Time remaining">--:--</span>
+  </footer>
+  <script type="module">
+    import { getScript, getSettings, pdfUrl } from "/web/js/api.js";
+    import { renderPages } from "/web/js/pages.js";
+    import { buildIndex, showSentence, hitTest } from "/web/js/highlight.js";
+
+    const id = decodeURIComponent(location.pathname.split("/").pop());
+    const pagesEl = document.getElementById("pages");
+    const errorEl = document.getElementById("error");
+    const fail = (e) => {
+      errorEl.textContent = e && e.offline ? "Can't reach the Storyteller server." : (e && e.message) || "Could not open this pack.";
+      errorEl.hidden = false;
+    };
+
+    try {
+      const [script, settings] = await Promise.all([getScript(id), getSettings().catch(() => null)]);
+      if (settings) {
+        document.documentElement.style.setProperty("--sentence-color", settings.sentence_color);
+        document.documentElement.style.setProperty("--word-color", settings.word_color);
+      }
+      document.title = `${script.title} - Storyteller`;
+      buildIndex(script);
+      const pageViews = await renderPages(pagesEl, pdfUrl(id));
+      const byId = new Map(script.sentences.map((s) => [s.id, s]));
+      window.__storyteller = { script, pageViews, hitTest };
+
+      pagesEl.addEventListener("click", (e) => {
+        const el = e.target.closest(".page");
+        if (!el) return;
+        const view = pageViews[Number(el.dataset.page)];
+        const r = el.getBoundingClientRect();
+        const sid = hitTest(view.pageIndex, ((e.clientX - r.left) / r.width) * view.width, ((e.clientY - r.top) / r.height) * view.height);
+        if (sid) {
+          console.log(`[storyteller] sid=${sid}`);
+          showSentence(byId.get(sid), pageViews);
+        }
+      });
+    } catch (e) {
+      fail(e);
+    }
+  </script>
+</body>
 </html>
