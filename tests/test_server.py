@@ -300,8 +300,13 @@ def test_concurrent_dict_puts_do_not_lose_updates(client):
     [t.start() for t in ts]
     [t.join() for t in ts]
     assert client.get("/api/settings").json()["pauses"] == {k: 119 for k in keys}
-    client.put("/api/settings", json={"pronunciations": {"a": "b"}})
-    assert client.put("/api/settings", json={"pronunciations": {"c": "d"}}).json()["pronunciations"] == {"a": "b", "c": "d"}
+
+
+def test_pronunciations_replace_on_put(client):
+    client.put("/api/settings", json={"pronunciations": {"a": "b", "c": "d"}})
+    r = client.put("/api/settings", json={"pronunciations": {"c": "d"}})
+    assert r.json()["pronunciations"] == {"c": "d"}
+    assert client.get("/api/settings").json()["pronunciations"] == {"c": "d"}
 
 
 def test_worker_follows_voice_change(mini_pdf):

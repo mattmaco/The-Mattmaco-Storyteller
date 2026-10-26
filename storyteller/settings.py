@@ -22,7 +22,7 @@ SPEED_MIN = 0.75
 SPEED_MAX = 2.0
 VOICE_RE = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 _SETTINGS_LOCK = threading.RLock()
-_MERGED_DICTS = ("pauses", "read_boxes", "pronunciations")
+_MERGED_DICTS = ("pauses", "read_boxes")  # pronunciations replace wholesale
 
 
 def home() -> Path:
