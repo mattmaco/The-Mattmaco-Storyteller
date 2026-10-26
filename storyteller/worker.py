@@ -27,7 +27,7 @@ class RenderWorker:
     def __init__(self, library: Library, backend) -> None:
         self.library = library
         self.backend = backend
-        self.failed: set[tuple[str, str]] = set()
+        self.failed: set[Path] = set()  # clip paths (text hash + voice) that failed to render
         self._render_lock = threading.Lock()
         self._cond = threading.Condition()
         self._urgent = 0  # render_now calls waiting for the lock
@@ -94,9 +94,9 @@ class RenderWorker:
             result = self.backend.synth([w.text for w in sentence.spoken], voice)
             self.library.save_clip(path, result)
         except Exception:
-            self.failed.add((pack_id, sentence.id))
+            self.failed.add(path)
             raise
-        self.failed.discard((pack_id, sentence.id))
+        self.failed.discard(path)
         return path
 
     def render_now(self, pack_id: str, sentence_id: str) -> Path:
@@ -162,13 +162,12 @@ class RenderWorker:
         pack_id, sentence_id = target
         sentences = self.script(pack_id).sentences
         start = next((i for i, s in enumerate(sentences) if s.id == sentence_id), 0)
-        voice = Settings.load().voice
         for sentence in sentences[start:] + sentences[:start]:
             if self._stop.is_set() or self._focus_gen != gen:
                 return
-            if (pack_id, sentence.id) in self.failed:
-                continue
-            if self._cached(self.library.clip_path(pack_id, sentence, voice)):
+            voice = Settings.load().voice  # re-read: the voice may change mid-pass
+            path = self.library.clip_path(pack_id, sentence, voice)
+            if path in self.failed or self._cached(path):
                 continue
             with self._cond:  # yield to any click waiting for the lock
                 while self._urgent and not self._stop.is_set():

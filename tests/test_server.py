@@ -155,7 +155,7 @@ def test_failed_sentence_returns_500_and_worker_survives(mini_pdf):
         assert r.status_code == 500
         assert r.json() == {"error": "synth_failed"}
         assert c.get(f"/api/packs/{info.id}/clip/{sentences[1].id}").status_code == 200
-        assert (info.id, bad.id) in app.state.worker.failed
+        assert library.clip_path(info.id, bad, 'af_heart') in app.state.worker.failed
         # the worker skips failed sentences (every sentence with the same text) and renders the rest
         n_bad = sum(1 for s in sentences if s.spoken_text == bad.spoken_text)
         c.post(f"/api/packs/{info.id}/focus", json={"sentence_id": bad.id})
@@ -246,11 +246,12 @@ def test_settings_invalid_400(client, bad):
     assert client.get("/api/settings").json()["speed"] == 1.0
 
 
-def test_pages_served(client):
-    for url in ("/", "/web/library.html"):
+def test_pages_served(client, pack):
+    assert client.get("/read/0123456789abcdef").status_code == 404
+    assert client.get("/read/..%2fx").status_code == 404
+    for url in ("/", "/web/library.html", f"/read/{pack['id']}"):
         r = client.get(url)
         assert r.status_code == 200 and "text/html" in r.headers["content-type"]
-    assert client.get("/read/abc").status_code == 200
 
 
 def test_cli_script_output():
@@ -288,3 +289,30 @@ def test_cli_serve_binds_loopback(monkeypatch):
     assert seen["ran"] and seen["config"].host == "127.0.0.1" and seen["config"].port == 9123
     cli.main(["serve", "--no-browser", "--port", "9555"])
     assert seen["config"].port == 9555
+
+
+def test_concurrent_dict_puts_do_not_lose_updates(client):
+    keys = ["sentence", "block", "section"]
+    def put(k):
+        for i in range(20):
+            assert client.put("/api/settings", json={"pauses": {k: 100 + i}}).status_code == 200
+    ts = [threading.Thread(target=put, args=(k,)) for k in keys]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert client.get("/api/settings").json()["pauses"] == {k: 119 for k in keys}
+    client.put("/api/settings", json={"pronunciations": {"a": "b"}})
+    assert client.put("/api/settings", json={"pronunciations": {"c": "d"}}).json()["pronunciations"] == {"a": "b", "c": "d"}
+
+
+def test_worker_follows_voice_change(mini_pdf):
+    library = Library()
+    info = library.add_pdf(mini_pdf.read_bytes(), mini_pdf.name)
+    app = create_app(library)
+    with TestClient(app) as c:
+        c.put("/api/settings", json={"voice": "bf_emma"})
+        c.post(f"/api/packs/{info.id}/focus", json={"sentence_id": "s00000"})
+        deadline = time.time() + 10
+        while time.time() < deadline and c.get("/api/status").json()["packs"][info.id]["rendered"] == 0:
+            time.sleep(0.05)
+        assert c.get("/api/status").json()["packs"][info.id]["rendered"] > 0
+    assert any((library.pdf_path(info.id).parent / "clips" / "bf_emma").glob("*.wav"))

@@ -22,6 +22,7 @@ SPEED_MIN = 0.75
 SPEED_MAX = 2.0
 VOICE_RE = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 _SETTINGS_LOCK = threading.RLock()
+_MERGED_DICTS = ("pauses", "read_boxes", "pronunciations")
 
 
 def home() -> Path:
@@ -128,6 +129,23 @@ class Settings:
         return s
 
     @classmethod
+    def validate_partial(cls, partial: dict) -> None:
+        """Raise ValueError if ``partial`` has unknown fields or values update() would drop."""
+        current = cls.load()
+        unknown = set(partial) - {f.name for f in fields(cls)}
+        if unknown:
+            raise ValueError(f"unknown settings: {sorted(unknown)}")
+        for key, value in partial.items():
+            if key in _MERGED_DICTS:
+                if not isinstance(value, dict):
+                    raise ValueError(f"{key} must be an object")
+                value = {**getattr(current, key), **value}
+            if isinstance(value, bool) != isinstance(getattr(current, key), bool):
+                raise ValueError(f"invalid value for {key}")
+            if getattr(cls._from_saved({key: value}), key) != value:
+                raise ValueError(f"invalid value for {key}")
+
+    @classmethod
     def update(cls, **partial) -> "Settings":
         """Load, apply ``partial`` field values, save; atomic against other updaters."""
         with _SETTINGS_LOCK:
@@ -137,6 +155,9 @@ class Settings:
             if unknown:
                 raise ValueError(f"unknown settings: {sorted(unknown)}")
             merged = {**s.__dict__, **partial}
+            for key in _MERGED_DICTS:  # partial dicts merge over the stored one
+                if isinstance(partial.get(key), dict):
+                    merged[key] = {**getattr(s, key), **partial[key]}
             s = cls._from_saved(merged)
             s.save()
             return s

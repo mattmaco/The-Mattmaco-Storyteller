@@ -40,28 +40,6 @@ def _not_found() -> HTTPException:
     return HTTPException(status_code=404, detail="not found")
 
 
-def _validate_settings(partial: dict) -> dict:
-    """Return the values to store; raise ValueError for unknown fields or invalid values."""
-    current = Settings.load()
-    names = set(current.__dict__)
-    unknown = set(partial) - names
-    if unknown:
-        raise ValueError(f"unknown settings: {sorted(unknown)}")
-    out = {}
-    for key, value in partial.items():
-        if key in ("pauses", "read_boxes"):  # partial dicts merge into the stored one
-            if not isinstance(value, dict):
-                raise ValueError(f"{key} must be an object")
-            value = {**getattr(current, key), **value}
-        if key == "speed" and isinstance(value, bool):
-            raise ValueError("speed must be a number")
-        # Settings drops values it cannot accept; anything that does not survive is invalid.
-        if getattr(Settings._from_saved({key: value}), key) != value:
-            raise ValueError(f"invalid value for {key}")
-        out[key] = value
-    return out
-
-
 def create_app(library: Library | None = None, backend=None) -> FastAPI:
     library = library or Library()
     backend = backend or get_backend()
@@ -98,6 +76,10 @@ def create_app(library: Library | None = None, backend=None) -> FastAPI:
 
     @app.get("/read/{pack_id}", include_in_schema=False)
     def reader(pack_id: str):
+        try:
+            library.pdf_path(pack_id)
+        except KeyError:
+            raise _not_found() from None
         return page("reader.html")
 
     # ---- packs -------------------------------------------------------------
@@ -143,8 +125,6 @@ def create_app(library: Library | None = None, backend=None) -> FastAPI:
         sentence_or_404(pack_id, sentence_id)
         try:
             path = worker.render_now(pack_id, sentence_id)
-        except KeyError:
-            raise _not_found() from None
         except Exception:
             log.warning("synthesis failed for %s/%s", pack_id, sentence_id, exc_info=True)
             return JSONResponse({"error": "synth_failed"}, status_code=500)
@@ -208,7 +188,8 @@ def create_app(library: Library | None = None, backend=None) -> FastAPI:
     @app.put("/api/settings")
     def put_settings(partial: dict):
         try:
-            return Settings.update(**_validate_settings(partial)).__dict__
+            Settings.validate_partial(partial)
+            return Settings.update(**partial).__dict__
         except ValueError as e:
             return JSONResponse({"error": "invalid_settings", "message": str(e)}, status_code=400)
 
