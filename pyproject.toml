@@ -1,0 +1,46 @@
+[project]
+name = "storyteller"
+version = "0.1.0"
+description = "Local offline PDF read-along study reader"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "pymupdf>=1.24",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "platformdirs",
+    "numpy",
+    "soundfile",
+]
+
+[project.optional-dependencies]
+voice = [
+    "kokoro>=0.9.4",
+    "torch",
+    # misaki loads this spaCy model on first use and would otherwise try to pip-install it at
+    # runtime, which fails in a uv environment (no pip) and breaks offline use.
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+]
+dev = ["pytest", "playwright", "httpx"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["storyteller"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu124", marker = "sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
