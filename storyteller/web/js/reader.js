@@ -5,6 +5,7 @@ import { getScript, getSettings, getStatus, listPacks, pdfUrl } from "./api.js";
 import { renderPages } from "./pages.js";
 import { buildIndex, clearWord, hitTest, showSentence, showSkipped, showWord, SKIPPED_TEXT } from "./highlight.js";
 import { Player } from "./player.js";
+import { bindThemeToggle } from "./theme.js";
 
 const SECONDS_PER_CHAR = 0.06; // estimate for clips not fetched yet (≈ Kokoro at 1.0×)
 const STATUS_POLL_MS = 3000;
@@ -22,6 +23,7 @@ const speedEl = $("speed");
 const progressEl = $("progress");
 const remainingEl = $("remaining");
 const backBtn = $("back-to-reading");
+bindThemeToggle($("theme-toggle"));
 
 // A file dropped on the reader must not navigate away from it.
 for (const t of ["dragover", "drop"]) window.addEventListener(t, (e) => e.preventDefault());

@@ -1,10 +1,12 @@
 import { listPacks, uploadPdf } from "./api.js";
+import { bindThemeToggle } from "./theme.js";
 
 const list = document.getElementById("pack-list");
 const empty = document.getElementById("empty");
 const message = document.getElementById("message");
 const drop = document.getElementById("drop");
 const input = document.getElementById("file-input");
+bindThemeToggle(document.getElementById("theme-toggle"));
 let timer = null;
 let lastInfo = ""; // last non-error message, restored once a failed refresh recovers
 let refreshError = null; // text of the refresh failure currently shown, if any

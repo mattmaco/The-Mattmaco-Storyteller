@@ -7,7 +7,10 @@ import threading
 
 from .base import SynthResult, VoiceBackend, align_words
 
-__all__ = ["SynthResult", "VoiceBackend", "align_words", "get_backend"]
+__all__ = ["PREVIEW_VOICES", "SynthResult", "VoiceBackend", "align_words", "get_backend"]
+
+# Voices offered in settings. Setup downloads all of them so switching voice works offline.
+PREVIEW_VOICES = ("af_heart", "af_bella", "af_nicole", "am_michael", "bf_emma", "bm_george")
 
 _backend: VoiceBackend | None = None
 _backend_name: str | None = None

@@ -14,12 +14,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-voice = ["kokoro>=0.9.4", "torch"]
+voice = [
+    "kokoro>=0.9.4",
+    "torch",
+    # misaki loads this spaCy model on first use and would otherwise try to pip-install it at
+    # runtime, which fails in a uv environment (no pip) and breaks offline use.
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+]
 dev = ["pytest", "playwright", "httpx"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["storyteller"]
