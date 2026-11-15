@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storyteller reader</title>
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body class="reader">
+  <div id="reconnect" class="banner" role="status" aria-live="polite" hidden>Reconnecting…</div>
+  <p id="announce" class="sr-only" role="status" aria-live="polite"></p>
+  <div class="layout">
+    <nav id="outline" aria-label="Outline"></nav>
+    <div class="centre">
+      <p id="error" class="message error" role="alert" hidden></p>
+      <main id="pages" aria-label="Document pages"></main>
+      <main id="clean" aria-label="Clean reading view" hidden></main>
+      <button id="back-to-reading" type="button" class="floating" aria-label="Back to reading" hidden>Back to reading</button>
+    </div>
+  </div>
+  <footer id="bar">
+    <a class="link" href="/" aria-label="Back to library">Library</a>
+    <button id="play" type="button" class="primary" aria-label="Play" disabled>Play</button>
+    <span class="readout"><span class="sr-only">Speed </span><span id="speed" role="status" aria-live="polite">1.00×</span></span>
+    <progress id="progress" max="1" value="0" aria-label="Reading progress"></progress>
+    <span class="readout"><span class="sr-only">Time remaining </span><span id="remaining">--:--</span></span>
+  </footer>
+  <script type="module" src="/web/js/reader.js"></script>
+</body>
+</html>
