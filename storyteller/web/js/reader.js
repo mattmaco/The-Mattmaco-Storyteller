@@ -156,7 +156,7 @@ function onWord(sid, i) {
 
 function onState(state) {
   const busy = state === "playing" || state === "loading";
-  playBtn.textContent = busy ? "Pause" : "Play";
+  $("play-label").textContent = busy ? "Pause" : "Play"; // icons swap via body[data-state]
   playBtn.setAttribute("aria-label", busy ? "Pause" : "Play");
   document.body.dataset.state = state;
   if (state === "playing") updateProgress(); // the clip's real duration is known now
@@ -191,6 +191,7 @@ try {
     document.documentElement.style.setProperty("--word-color", settings.word_color);
   }
   document.title = `${script.title} - Storyteller`;
+  $("doc-title").textContent = script.title;
   buildIndex(script);
   byId = new Map(script.sentences.map((x) => [x.id, x]));
   indexOf = new Map(script.sentences.map((x, i) => [x.id, i]));

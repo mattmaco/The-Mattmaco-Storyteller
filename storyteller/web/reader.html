@@ -4,10 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Storyteller reader</title>
+  <link rel="icon" href="/web/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="/web/vendor/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/web/style.css">
 </head>
 <body class="reader">
-  <div id="reconnect" class="banner" role="status" aria-live="polite" hidden>Reconnecting…</div>
+  <div id="reconnect" class="banner" role="status" aria-live="polite" hidden>Can't reach Storyteller. Reconnecting…</div>
   <p id="announce" class="sr-only" role="status" aria-live="polite"></p>
   <div class="layout">
     <nav id="outline" aria-label="Outline"></nav>
@@ -19,11 +21,23 @@
     </div>
   </div>
   <footer id="bar">
-    <a class="link" href="/" aria-label="Back to library">Library</a>
-    <button id="play" type="button" class="primary" aria-label="Play" disabled>Play</button>
-    <span class="readout"><span class="sr-only">Speed </span><span id="speed" role="status" aria-live="polite">1.00×</span></span>
-    <progress id="progress" max="1" value="0" aria-label="Reading progress"></progress>
-    <span class="readout"><span class="sr-only">Time remaining </span><span id="remaining">--:--</span></span>
+    <div class="bar-start">
+      <a class="back" href="/" aria-label="Back to library">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.6 5.6 1.4 1.4-5 5 5 5-1.4 1.4L8.2 12l6.4-6.4Z"/></svg>
+        <span class="back-text">Library</span>
+      </a>
+      <span id="doc-title" class="doc-title"></span>
+    </div>
+    <button id="play" type="button" class="primary" aria-label="Play" disabled>
+      <svg class="icon icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.6-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z"/></svg>
+      <svg class="icon icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5h3.2a.8.8 0 0 1 .8.8v13.4a.8.8 0 0 1-.8.8H7a.8.8 0 0 1-.8-.8V5.3a.8.8 0 0 1 .8-.8Zm6.8 0H17a.8.8 0 0 1 .8.8v13.4a.8.8 0 0 1-.8.8h-3.2a.8.8 0 0 1-.8-.8V5.3a.8.8 0 0 1 .8-.8Z"/></svg>
+      <span id="play-label">Play</span>
+    </button>
+    <div class="bar-end">
+      <span class="readout"><span class="sr-only">Speed </span><span id="speed" role="status" aria-live="polite">1.00×</span></span>
+      <progress id="progress" max="1" value="0" aria-label="Reading progress"></progress>
+      <span class="readout"><span class="sr-only">Time remaining </span><span id="remaining">--:--</span></span>
+    </div>
   </footer>
   <script type="module" src="/web/js/reader.js"></script>
 </body>

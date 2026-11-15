@@ -33,15 +33,25 @@ function packItem(p) {
   h.textContent = p.title;
   const meta = document.createElement("p");
   meta.className = "pack-meta";
-  meta.textContent = `${p.page_count} pages · ${p.filename}`;
-  const prog = document.createElement("p");
+  meta.textContent = `${p.filename}, ${p.page_count} ${p.page_count === 1 ? "page" : "pages"}`;
+  const prog = document.createElement("div");
   prog.className = "pack-progress";
-  prog.textContent = `Audio ready: ${p.rendered}/${p.total}`;
-  const bar = document.createElement("progress");
-  bar.max = Math.max(p.total, 1);
-  bar.value = p.rendered;
-  bar.setAttribute("aria-label", `Audio prepared for ${p.title}`);
-  info.append(h, meta, prog, bar);
+  if (p.rendered >= p.total) {
+    const done = document.createElement("span");
+    done.className = "ready";
+    done.textContent = "Audio ready";
+    prog.append(done);
+  } else {
+    const bar = document.createElement("progress");
+    bar.max = Math.max(p.total, 1);
+    bar.value = p.rendered;
+    bar.setAttribute("aria-label", `Audio prepared for ${p.title}`);
+    const label = document.createElement("span");
+    label.className = "muted";
+    label.textContent = `Preparing audio: ${p.rendered} of ${p.total} sentences`;
+    prog.append(bar, label);
+  }
+  info.append(h, meta, prog);
 
   const btn = document.createElement("button");
   btn.type = "button";

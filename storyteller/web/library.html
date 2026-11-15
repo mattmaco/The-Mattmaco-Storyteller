@@ -4,24 +4,34 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Storyteller</title>
+  <link rel="icon" href="/web/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="/web/vendor/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/web/style.css">
 </head>
 <body class="library">
   <main>
-    <h1>Storyteller</h1>
-    <p class="lead">Your study packs. Nothing plays until you press play.</p>
+    <header class="masthead">
+      <img class="mark" src="/web/icon.svg" alt="" width="44" height="44">
+      <h1>Storyteller</h1>
+    </header>
+    <p class="lead">Read your study packs aloud, with each sentence highlighted as you hear it. Nothing plays until you press Play.</p>
 
     <section aria-labelledby="packs-h">
       <h2 id="packs-h" class="section-title">Your packs</h2>
       <ul id="pack-list" class="packs"></ul>
-      <p id="empty" class="muted" hidden>No packs yet. Add a PDF below.</p>
+      <p id="empty" class="muted" hidden>No packs yet. Add a PDF below to make your first one.</p>
     </section>
 
     <section aria-labelledby="add-h">
       <h2 id="add-h" class="section-title">Add a PDF</h2>
       <div id="drop" class="drop" role="button" tabindex="0" aria-label="Add a PDF: drop a file here or press Enter to choose one">
-        <strong>Drop a PDF here</strong>
-        <span>or press Enter / click to choose a file</span>
+        <span class="drop-icon" aria-hidden="true">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V9h5.5L13 3.5ZM11 12v3H8v2h3v3h2v-3h3v-2h-3v-3h-2Z"/></svg>
+        </span>
+        <div>
+          <strong>Drop a PDF here</strong>
+          <span>or click to choose a file</span>
+        </div>
       </div>
       <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
       <p id="message" class="message" role="status" aria-live="polite"></p>
